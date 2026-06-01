@@ -8,6 +8,7 @@ const {
   isValidPaymentMethod,
 } = require('../utils/paymentMethods');
 const promoService = require('./promo.service');
+const walletService = require('./wallet.service');
 
 const resolveOwnerId = (value) => {
   if (value == null) return null;
@@ -88,6 +89,16 @@ const createOrder = async (userId, payload) => {
   const orderTotal = Number(Math.max(0, orderSubtotal - promoDiscount).toFixed(2));
   const region = resolveRegionFromAddress(deliveryAddress || address);
 
+  if (normalizedPayment === 'wallet') {
+    await walletService.debitWallet(
+      userId,
+      orderTotal,
+      'Commande PetfoodTN',
+      null,
+      { id: userId }
+    );
+  }
+
   const order = await orderRepository.create({
     userId,
     total: orderTotal,
@@ -118,7 +129,9 @@ const createOrder = async (userId, payload) => {
       userId,
       orderId: order.id,
       amount: orderTotal,
-      paymentMethod: normalizedPayment
+      paymentMethod: normalizedPayment,
+      status: normalizedPayment === 'wallet' ? 'paid' : 'unpaid',
+      paidAt: normalizedPayment === 'wallet' ? new Date() : null,
     }
   });
 

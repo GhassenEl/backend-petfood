@@ -100,7 +100,7 @@ const syncReminders = async (userId, user = null) => {
       type: 'vaccine_reminder',
       title: urgency === 'overdue' ? '⚠️ Vaccin en retard' : '💉 Rappel vaccin',
       description: `${v.petName} — ${v.vaccineType}${days !== null ? ` (${days <= 0 ? 'en retard' : `dans ${days} j`})` : ''}`,
-      link: '/client-vaccines',
+        link: '/medical-dossier',
       read: false,
       createdAt: now.toISOString(),
     });

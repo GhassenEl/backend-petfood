@@ -1,5 +1,6 @@
 /** Méthodes de paiement acceptées côté client (IDs stables en base). */
 const PAYMENT_METHODS = [
+  { id: 'wallet', label: 'Portefeuille électronique', icon: 'wallet', online: true, provider: 'wallet' },
   { id: 'stripe', label: 'Stripe', icon: 'stripe', online: true, provider: 'stripe' },
   { id: 'paypal', label: 'PayPal', icon: 'paypal', online: true, provider: 'paypal' },
   { id: 'card', label: 'Carte bancaire', icon: 'card', online: true, provider: 'stripe' },

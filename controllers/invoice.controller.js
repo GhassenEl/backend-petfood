@@ -53,6 +53,18 @@ const payInvoice = async (req, res) => {
     }
     if (invoice.status === 'paid') return res.status(400).json({ error: 'Already paid' });
 
+    const method = paymentMethod || invoice.paymentMethod;
+    if (method === 'wallet') {
+      const walletService = require('../services/wallet.service');
+      await walletService.debitWallet(
+        getUserId(req),
+        invoice.amount,
+        `Facture #${String(invoice.id).slice(-6)}`,
+        invoice.id,
+        req.user
+      );
+    }
+
     const updated = await prisma.invoice.update({
       where: { id: req.params.id },
       data: {
