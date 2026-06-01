@@ -1,21 +1,24 @@
-const mongoose = require('mongoose');
-const Order = require('../models/Order');
-const Invoice = require('../models/Invoice');
-const Product = require('../models/Product');
+const { isDemoMode } = require('../prismaClient');
 const demoStore = require('../utils/demoStore');
+const orderService = require('../services/order.service');
 
-const isDemoMode = () => !mongoose.connection || mongoose.connection.readyState !== 1;
+const getUserId = (req) => req.user?.id || req.user?._id || req.user?.userId;
+
+
+const handleError = (res, error, defaultStatus = 500) => {
+  return res.status(error.status || defaultStatus).json({ error: error.message });
+};
 
 const getOrders = async (req, res) => {
   try {
     if (isDemoMode()) {
       return res.json(demoStore.getOrders(req.user));
     }
-    const query = (req.user.role === 'admin' || req.user.role === 'livreur') ? {} : { userId: req.user._id };
-    const orders = await Order.find(query).populate('items.productId', 'name price discount').sort({ createdAt: -1 });
+
+    const orders = await orderService.getOrders(req.user);
     res.json(orders);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    handleError(res, error);
   }
 };
 
@@ -28,12 +31,11 @@ const getStats = async (req, res) => {
       const pending = orders.filter((order) => order.status === 'pending').length;
       return res.json({ total, revenue, pending });
     }
-    const total = await Order.countDocuments();
-    const revenue = await Order.aggregate([{ $group: { _id: null, total: { $sum: '$total' } } }]);
-    const pending = await Order.countDocuments({ status: 'pending' });
-    res.json({ total, revenue: revenue[0]?.total || 0, pending });
+
+    const stats = await orderService.getStats(req.user.role);
+    res.json(stats);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    handleError(res, error);
   }
 };
 
@@ -43,71 +45,25 @@ const createOrder = async (req, res) => {
       const result = demoStore.createOrder(req.user, req.body);
       return res.status(201).json(result);
     }
-    req.body.userId = req.user._id;
-    
-    // Stock check and decrement
-    for (const item of req.body.items) {
-      const product = await Product.findById(item.productId);
-      if (!product || product.stock < item.quantity) {
-        return res.status(400).json({ error: `Stock insuffisant pour ${product?.name || item.productId}: ${product?.stock || 0}/${item.quantity}` });
-      }
-      product.stock -= item.quantity;
-      await product.save();
-    }
-    
-    const order = new Order(req.body);
-    await order.save();
-    const invoice = new Invoice({
-      userId: req.user._id,
-      orderId: order._id,
-      amount: order.total,
-      paymentMethod: req.body.paymentMethod || 'cash',
-    });
-    await invoice.save();
-    res.status(201).json({ order, invoice });
+
+    const result = await orderService.createOrder(getUserId(req), req.body);
+    res.status(201).json(result);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    handleError(res, error, error.status || 400);
   }
 };
 
 const createAdminOrder = async (req, res) => {
   try {
-    const { userId, items, total, address, phone, paymentMethod, location } = req.body;
-    
-    // Stock check and decrement for admin orders
-    for (const item of items) {
-      const product = await Product.findById(item.productId);
-      if (!product || product.stock < item.quantity) {
-        return res.status(400).json({ error: `Stock insuffisant pour ${product?.name || item.productId}: ${product?.stock || 0}/${item.quantity}` });
-      }
-      product.stock -= item.quantity;
-      await product.save();
-    }
-    
     if (isDemoMode()) {
-      const result = demoStore.createOrder({ _id: userId }, { items, total, address, phone, paymentMethod, location });
+      const result = demoStore.createOrder({ _id: req.body.userId }, req.body);
       return res.status(201).json(result);
     }
-    const order = new Order({
-      userId,
-      items,
-      total,
-      address,
-      phone,
-      paymentMethod: paymentMethod || 'cash',
-      location: location || null,
-    });
-    await order.save();
-    const invoice = new Invoice({
-      userId,
-      orderId: order._id,
-      amount: total,
-      paymentMethod: paymentMethod || 'cash',
-    });
-    await invoice.save();
-    res.status(201).json({ order, invoice });
+
+    const result = await orderService.createAdminOrder(req.body);
+    res.status(201).json(result);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    handleError(res, error, error.status || 400);
   }
 };
 
@@ -118,11 +74,41 @@ const updateOrder = async (req, res) => {
       if (!order) return res.status(404).json({ error: 'Order not found' });
       return res.json(order);
     }
-    const order = await Order.findByIdAndUpdate(req.params.id, req.body, { new: true }).populate('items.productId', 'name price discount');
-    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const order = await orderService.updateOrder(req.params.id, req.body);
     res.json(order);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    handleError(res, error, error.status || 400);
+  }
+};
+
+const updateOrderStatus = async (req, res) => {
+  try {
+    const { status, deliveryNote } = req.body;
+    if (!status) {
+      return res.status(400).json({ error: 'Status is required' });
+    }
+
+    if (isDemoMode()) {
+      if (req.user.role === 'livreur') {
+        const order = demoStore.getOrders(req.user).find((o) => o._id === req.params.id);
+        if (!order) return res.status(404).json({ error: 'Order not found' });
+        const flow = { pending: 'shipped', shipped: 'delivered' };
+        if (flow[order.status] !== status) {
+          return res.status(400).json({ error: 'Invalid status transition' });
+        }
+      }
+      const updated = demoStore.updateOrder(req.params.id, { status });
+      if (!updated) return res.status(404).json({ error: 'Order not found' });
+      return res.json(updated);
+    }
+
+    const order = await orderService.livreurUpdateStatus(req.params.id, req.user, status, {
+      deliveryNote,
+    });
+    res.json(order);
+  } catch (error) {
+    handleError(res, error, error.status || 400);
   }
 };
 
@@ -133,16 +119,40 @@ const deleteOrder = async (req, res) => {
       if (!order) return res.status(404).json({ error: 'Order not found' });
       return res.json({ message: 'Order deleted' });
     }
-    let order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (req.user.role !== 'admin' && req.user._id.toString() !== order.userId.toString()) {
-      return res.status(403).json({ error: 'Not authorized' });
-    }
-    await Order.findByIdAndDelete(req.params.id);
+
+    await orderService.deleteOrder(req.params.id, req.user);
     res.json({ message: 'Order deleted' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    handleError(res, error, error.status || 500);
   }
 };
 
-module.exports = { getOrders, getStats, createOrder, createAdminOrder, updateOrder, deleteOrder };
+const getOrderTracking = async (req, res) => {
+  try {
+    if (isDemoMode()) {
+      const order = demoStore.getOrders(req.user).find((o) => o._id === req.params.id);
+      if (!order) return res.status(404).json({ error: 'Commande introuvable' });
+      return res.json({
+        orderId: order._id,
+        status: order.status,
+        livreur: order.status === 'shipped' ? { name: 'Livreur démo' } : null,
+      });
+    }
+
+    const data = await orderService.getOrderTracking(req.params.id, req.user);
+    res.json(data);
+  } catch (error) {
+    handleError(res, error, error.status || 500);
+  }
+};
+
+module.exports = {
+  getOrders,
+  getStats,
+  createOrder,
+  createAdminOrder,
+  updateOrder,
+  updateOrderStatus,
+  deleteOrder,
+  getOrderTracking,
+};

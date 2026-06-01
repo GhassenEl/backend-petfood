@@ -1,21 +1,22 @@
-const mongoose = require('mongoose');
-const Product = require('../models/Product');
-const User = require('../models/User');
-const Order = require('../models/Order');
-const Review = require('../models/Review');
+const { isDemoMode } = require('../prismaClient');
 const demoStore = require('../utils/demoStore');
+const productService = require('../services/product.service');
+const { getPetRecommendations } = require('../services/petRecommendation.service');
 
-const isDemoMode = () => !mongoose.connection || mongoose.connection.readyState !== 1;
+const handleError = (res, error, defaultStatus = 500) => {
+  return res.status(error.status || defaultStatus).json({ error: error.message });
+};
 
 const getProducts = async (req, res) => {
   try {
     if (isDemoMode()) {
       return res.json(demoStore.getProducts());
     }
-    const products = await Product.find();
+
+    const products = await productService.getProducts();
     res.json(products);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    handleError(res, error);
   }
 };
 
@@ -24,11 +25,11 @@ const createProduct = async (req, res) => {
     if (isDemoMode()) {
       return res.status(201).json(demoStore.createProduct(req.body));
     }
-    const product = new Product(req.body);
-    await product.save();
+
+    const product = await productService.createProduct(req.body);
     res.status(201).json(product);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    handleError(res, error, 400);
   }
 };
 
@@ -39,11 +40,11 @@ const updateProduct = async (req, res) => {
       if (!product) return res.status(404).json({ error: 'Product not found' });
       return res.json(product);
     }
-    const product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!product) return res.status(404).json({ error: 'Product not found' });
+
+    const product = await productService.updateProduct(req.params.id, req.body);
     res.json(product);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    handleError(res, error, error.code === 'P2025' ? 404 : 400);
   }
 };
 
@@ -54,11 +55,11 @@ const deleteProduct = async (req, res) => {
       if (!product) return res.status(404).json({ error: 'Product not found' });
       return res.json({ message: 'Product deleted' });
     }
-    const product = await Product.findByIdAndDelete(req.params.id);
-    if (!product) return res.status(404).json({ error: 'Product not found' });
+
+    await productService.deleteProduct(req.params.id);
     res.json({ message: 'Product deleted' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    handleError(res, error, error.code === 'P2025' ? 404 : 500);
   }
 };
 
@@ -66,109 +67,48 @@ const getRecommendations = async (req, res) => {
   try {
     if (isDemoMode()) {
       const all = demoStore.getProducts();
-      const user = req.user;
-      const scored = all.map(p => {
-        let score = 0;
-        let reasons = [];
-        if (user.petType && p.animalType === user.petType) {
-          score += 0.35;
-          reasons.push(`Adapté à votre ${user.petType}`);
-        }
-        if (p.discount > 0) {
-          score += (p.discount / 100) * 0.20;
-          reasons.push(`-${p.discount}% réduction`);
-        }
-        if (p.popularity > 80) {
-          score += 0.15;
-          reasons.push('Très populaire');
-        }
-        if (p.rating_avg >= 4.5) {
-          score += 0.10;
-          reasons.push('Bien noté');
-        }
-        return { ...p, score, recommendedReason: reasons[0] || 'Recommandé pour vous' };
-      });
-      scored.sort((a, b) => b.score - a.score);
+      const scored = all.map((p) => ({
+        ...p,
+        score: Math.random(),
+        recommendedReason: p.discount > 0 ? `-${p.discount}%` : 'Recommandé pour vous'
+      })).sort((a, b) => b.score - a.score);
       return res.json(scored.slice(0, 8));
     }
 
-    const user = await User.findById(req.user._id);
-    const userOrders = await Order.find({ userId: req.user._id }).populate('items.productId');
-    const boughtProductIds = userOrders.flatMap(o => o.items.map(i => i.productId?._id?.toString()));
-
-    const userReviews = await Review.find({ userId: req.user._id }).populate('productId');
-    const positiveProductIds = userReviews
-      .filter(r => ['happy', 'satisfied'].includes(r.emotion) && r.rating >= 4)
-      .map(r => r.productId?._id?.toString());
-    const negativeProductIds = userReviews
-      .filter(r => ['disappointed', 'frustrated'].includes(r.emotion) || r.rating <= 2)
-      .map(r => r.productId?._id?.toString());
-
-    const allProducts = await Product.find();
-
-    const scoredProducts = allProducts.map(p => {
-      const pId = p._id.toString();
-      let score = 0;
-      const reasons = [];
-
-      if (user.petType && p.animalType === user.petType) {
-        score += 0.30;
-        reasons.push(`🐾 Pour votre ${p.animalType}`);
-      }
-      if (user.favoriteCategories?.includes(p.category)) {
-        score += 0.20;
-        reasons.push(`❤️ Catégorie préférée`);
-      }
-      if (positiveProductIds.includes(pId)) {
-        score += 0.15;
-        reasons.push('😊 Vous avez adoré !');
-      }
-      const likedProducts = userReviews.filter(r => positiveProductIds.includes(r.productId?._id?.toString()));
-      const likedTypes = likedProducts.map(r => r.productId?.animalType).filter(Boolean);
-      const likedCats = likedProducts.map(r => r.productId?.category).filter(Boolean);
-      if (likedTypes.includes(p.animalType)) {
-        score += 0.10;
-        reasons.push('Similaire à vos coups de cœur');
-      }
-      if (likedCats.includes(p.category)) {
-        score += 0.08;
-        reasons.push('Même catégorie que vos favoris');
-      }
-      if (negativeProductIds.includes(pId)) {
-        score -= 0.25;
-      }
-      if (boughtProductIds.includes(pId)) {
-        score += 0.05;
-        reasons.push('Déjà acheté');
-      }
-      if (p.discount > 0) {
-        score += (p.discount / 100) * 0.12;
-        reasons.push(`💰 -${p.discount}%`);
-      }
-      score += (p.popularity / 100) * 0.10;
-      if (p.popularity > 85) reasons.push('🔥 Très populaire');
-      if (p.rating_avg >= 4.5) {
-        score += 0.08;
-        reasons.push('⭐ Bien noté');
-      }
-      const prefMatch = p.tags?.some(t => user.preferences?.includes(t));
-      if (prefMatch) {
-        score += 0.07;
-        reasons.push('Correspond à vos préférences');
-      }
-
-      return {
-        ...p.toObject(),
-        score: Math.min(Math.max(score, 0), 1),
-        recommendedReason: reasons[0] || (p.discount > 0 ? `-${p.discount}%` : 'Recommandé pour vous')
-      };
-    });
-
-    scoredProducts.sort((a, b) => b.score - a.score);
-    const recs = scoredProducts.filter(p => p.score > 0).slice(0, 8);
-    res.json(recs);
+    const recommendations = await productService.getRecommendations(req.user);
+    res.json(recommendations);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    handleError(res, error);
+  }
+};
+
+const getPetProductRecommendations = async (req, res) => {
+  try {
+    const petId = req.query.petId || null;
+    const limit = Math.min(Number(req.query.limit) || 8, 20);
+
+    if (isDemoMode()) {
+      const all = demoStore.getProducts();
+      const user = demoStore.getUserById(req.user._id) || req.user;
+      const petType = user?.petType || 'dog';
+      const scored = all
+        .map((p) => ({
+          ...p,
+          score: p.animalType === petType ? 0.9 : 0.3,
+          recommendedReason: p.animalType === petType ? `🐾 Pour votre ${petType}` : 'Produit populaire',
+          petName: 'Mon animal',
+        }))
+        .sort((a, b) => b.score - a.score);
+      return res.json({
+        pets: [{ id: 'demo', name: 'Mon animal', type: petType, emoji: '🐾' }],
+        recommendations: scored.slice(0, limit),
+      });
+    }
+
+    const result = await getPetRecommendations(req.user, { petId, limit });
+    res.json(result);
+  } catch (error) {
+    handleError(res, error);
   }
 };
 
@@ -176,7 +116,7 @@ const getNearbyProducts = async (req, res) => {
   try {
     if (isDemoMode()) {
       const all = demoStore.getProducts();
-      const nearby = all.slice(0, 6).map(p => ({
+      const nearby = all.slice(0, 6).map((p) => ({
         ...p,
         distance: Math.round(Math.random() * 5 + 1),
         recommendedReason: `À ${Math.round(Math.random() * 5 + 1)}km de chez vous`
@@ -184,21 +124,10 @@ const getNearbyProducts = async (req, res) => {
       return res.json(nearby);
     }
 
-    const user = await User.findById(req.user._id).select('location');
-    if (!user.location) {
-      return res.json([]);
-    }
-
-    const products = await Product.find().limit(6);
-    const nearby = products.map(p => ({
-      ...p.toObject(),
-      distance: Math.round(Math.random() * 5 + 1),
-      recommendedReason: `À ${Math.round(Math.random() * 5 + 1)}km de chez vous`
-    })).sort((a, b) => a.distance - b.distance);
-
+    const nearby = await productService.getNearbyProducts();
     res.json(nearby);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    handleError(res, error);
   }
 };
 
@@ -215,19 +144,13 @@ const adjustStock = async (req, res) => {
       if (!existing) return res.status(404).json({ error: 'Product not found' });
       const newStock = Math.max(0, Number(existing.stock || 0) + adjustment);
       const product = demoStore.updateProduct(req.params.id, { stock: newStock });
-      if (!product) return res.status(404).json({ error: 'Product not found' });
-      return res.json({ message: 'Stock ajusté', product, adjustment: req.body.adjustment, reason: req.body.reason });
+      return res.json({ message: 'Stock ajusté', product, adjustment: req.body.adjustment, reason });
     }
-    const product = await Product.findById(req.params.id);
-    if (!product) return res.status(404).json({ error: 'Product not found' });
-    const newStock = Math.max(0, Number(product.stock || 0) + adjustment);
-    product.stock = newStock;
-    product.stockHistory = product.stockHistory || [];
-    product.stockHistory.push({ adjustment, newStock, reason, date: new Date(), adminId: req.user._id });
-    await product.save();
-    res.json({ message: `Stock ajusté: ${adjustment > 0 ? '+' : ''}${adjustment} (${newStock} restant)`, product, adjustment, reason });
+
+    const updated = await productService.adjustStock(req.params.id, adjustment, req.user.id || req.user._id, reason);
+    res.json({ message: `Stock ajusté: ${adjustment > 0 ? '+' : ''}${adjustment} (${updated.stock} restant)`, product: updated, adjustment, reason });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    handleError(res, error, error.status || 400);
   }
 };
 
@@ -235,41 +158,33 @@ const getLowStock = async (req, res) => {
   try {
     if (isDemoMode()) {
       const threshold = Number(req.query.threshold) || 10;
-      const products = demoStore.getProducts().filter(p => p.stock < threshold && p.stock >= 0);
+      const products = demoStore.getProducts().filter((p) => p.stock < threshold && p.stock >= 0);
       return res.json(products);
     }
+
     const threshold = Number(req.query.threshold) || 10;
-    const products = await Product.find({ stock: { $lt: threshold, $gte: 0 } }).sort({ stock: 1 });
+    const products = await productService.getLowStock(threshold);
     res.json(products);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    handleError(res, error);
   }
 };
 
 const bulkUpdateStock = async (req, res) => {
   try {
     if (isDemoMode()) {
-      const results = req.body.updates.map(up => {
+      const results = req.body.updates.map((up) => {
         const p = demoStore.updateProduct(up.id, { stock: up.stock });
         return p ? { id: up.id, success: true, newStock: p.stock } : { id: up.id, success: false };
       });
-      return res.json({ results, summary: `${results.filter(r => r.success).length}/${req.body.updates.length} mis à jour` });
+      return res.json({ results, summary: `${results.filter((r) => r.success).length}/${req.body.updates.length} mis à jour` });
     }
-    const results = [];
-    for (const up of req.body.updates) {
-      const product = await Product.findById(up.id);
-      if (!product) {
-        results.push({ id: up.id, success: false, error: 'Not found' });
-        continue;
-      }
-      product.stock = Math.max(0, Number(up.stock));
-      await product.save();
-      results.push({ id: up.id, success: true, newStock: product.stock });
-    }
-    const successCount = results.filter(r => r.success).length;
+
+    const results = await productService.bulkUpdateStock(req.body.updates || []);
+    const successCount = results.filter((r) => r.success).length;
     res.json({ results, summary: `${successCount}/${req.body.updates.length} mis à jour` });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    handleError(res, error);
   }
 };
 
@@ -279,9 +194,9 @@ module.exports = {
   updateProduct,
   deleteProduct,
   getRecommendations,
+  getPetProductRecommendations,
   getNearbyProducts,
   adjustStock,
   getLowStock,
   bulkUpdateStock
 };
-

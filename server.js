@@ -1,11 +1,8 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const cors = require('cors');
-const dns = require('dns');
 const path = require('path');
+const { connectDB, isDemoMode } = require('./prismaClient');
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
-
-dns.setServers(['8.8.8.8', '1.1.1.1']);
 
 // Suppress util._extend deprecation warning from legacy dependencies
 process.removeAllListeners('warning');
@@ -16,33 +13,45 @@ process.on('warning', (warning) => {
   console.warn(warning);
 });
 
+const http = require('http');
+const { Server: IOServer } = require('socket.io');
+const { setNotificationIo, emitToUser } = require('./utils/notificationHub');
+
 const app = express();
 app.set('trust proxy', 1); // Required for express-rate-limit behind React dev server proxy
-const PORT = process.env.PORT || 5001;
+const BASE_PORT = Number(process.env.PORT) || 5002;
+
 
 // Verify critical env vars at startup
 if (!process.env.JWT_SECRET) {
+
   console.error('❌ FATAL: JWT_SECRET is not set. Check that backend/.env exists and dotenv loaded it.');
   process.exit(1);
 }
 console.log('✅ JWT_SECRET loaded successfully');
 
-// CORS configuration for local development.
+// CORS configuration for local development and Docker (CORS_ORIGINS env).
 const allowedOrigins = [
   'http://127.0.0.1:3000',
   'http://127.0.0.1:3001',
   'http://127.0.0.1:3002',
   'http://127.0.0.1:3003',
-'http://localhost:3000',
+  'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:3002',
   'http://localhost:3003',
+  'http://localhost:8080',
+  'http://127.0.0.1:8080',
   'http://localhost:30007',
   'http://192.168.0.114:30007',
   'http://192.168.0.114:3000',
   'http://192.168.0.114:3001',
   'http://192.168.0.114:3002',
   'http://192.168.0.114:3003',
+  ...(process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
 ];
 
 const isPrivateDevOrigin = (origin) =>
@@ -70,7 +79,7 @@ app.use((err, req, res, next) => {
 
 // Security headers to prevent X-Frame-Options issues
 app.use((req, res, next) => {
-res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'self' http://localhost:* http://127.0.0.1:* http://192.168.*:* http://10.*:* http://172.*:* *; frame-src 'self' http://localhost:* http://127.0.0.1:* http://192.168.*:* http://10.*:* http://172.*:* blob: data: ;");
+  res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'self' http://localhost:* http://127.0.0.1:* http://192.168.*:* http://10.*:* http://172.*:* *; frame-src 'self' http://localhost:* http://127.0.0.1:* http://192.168.*:* http://10.*:* http://172.*:* blob: data: ;");
   res.setHeader('X-Content-Type-Options', 'nosniff');
   next();
 });
@@ -82,97 +91,53 @@ app.use((req, res, next) => {
 });
 app.use(express.json());
 
-// Construct MONGO_URI from env vars
-// Supports BOTH:
-// - MONGO_URI (mongodb+srv or mongodb://)
-// - MONGO_URI_DIRECT (non-SRV mongodb://), recommended when SRV/DNS fails
-if (process.env.MONGO_URI_DIRECT) {
-  process.env.MONGO_URI = process.env.MONGO_URI_DIRECT;
-  console.log(' Using MONGO_URI_DIRECT override (non-SRV)');
-}
-
-if (!process.env.MONGO_URI) {
-  const user = process.env.MONGODB_USER;
-  const passRaw = process.env.MONGODB_PASSWORD;
-  const cluster = process.env.MONGODB_CLUSTER;
-
-  // Only build MONGO_URI when every part is present
-  if (user && passRaw && cluster) {
-    const pass = encodeURIComponent(passRaw);
-    process.env.MONGO_URI = `mongodb+srv://${user}:${pass}@${cluster}/petfoodtn?retryWrites=true&w=majority`;
-    console.log(' MONGO_URI constructed from env vars (mongodb+srv)');
-  } else {
-    console.error('Missing MONGODB_USER/PASSWORD/CLUSTER in backend/.env');
-  }
-}
-
-
-// MongoDB connection
-const connectDB = async () => {
+const initDatabase = async () => {
   try {
-    await mongoose.connect(process.env.MONGO_URI);
-    console.log('MongoDB connected successfully');
-    return;
+    if (!isDemoMode()) {
+      await connectDB();
+      const { ensureVetsByRegion } = require('./utils/ensureVetsByRegion');
+      await ensureVetsByRegion();
+    } else {
+      console.log('⚠️ DEMO_MODE enabled: running without SQL database');
+    }
   } catch (err) {
-    console.error('❌ MongoDB connection failed:', err.message);
-
-    // If SRV fails (DNS/lookup), try a safer fallback strategy.
-    // Prefer MONGO_URI_DIRECT (non-SRV) if provided.
-    if (process.env.MONGO_URI_DIRECT) {
-      console.error('❌ MongoDB connection failed even with MONGO_URI_DIRECT');
-      return;
-    }
-
-    // If we were using mongodb+srv, we previously attempted a hardcoded fallback.
-    // Replace it with a parameterized attempt using the same cluster + auth info.
-    // Note: this fallback may still fail if your cluster string is wrong,
-    // but it avoids hardcoding shard hostnames.
-    if (process.env.MONGO_URI?.startsWith('mongodb+srv://')) {
-      const user = process.env.MONGODB_USER;
-      const pass = encodeURIComponent(process.env.MONGODB_PASSWORD);
-      const cluster = process.env.MONGODB_CLUSTER;
-
-      if (user && pass && cluster) {
-        const fallbackUri = `mongodb://${user}:${pass}@${cluster}:27017/petfoodtn?authSource=admin&retryWrites=true&w=majority&tls=true`;
-        console.log('Attempting direct MongoDB fallback URI without SRV (host from MONGODB_CLUSTER)');
-        try {
-          await mongoose.connect(fallbackUri);
-          console.log('MongoDB connected successfully using direct fallback URI');
-          return;
-        } catch (fallbackErr) {
-          console.error('❌ MongoDB direct fallback connection failed:', fallbackErr.message);
-        }
-      } else {
-        console.error('Missing MONGODB_USER/PASSWORD/CLUSTER for fallback URI');
-      }
-    }
+    console.error('❌ Failed to connect to SQL database:', err.message);
+    process.exit(1);
   }
 };
 
-connectDB().catch(console.error);
+initDatabase();
 
-// Routes
-app.use('/api/auth', require('./routes/auth.routes'));
-app.use('/api/products', require('./routes/products.routes'));
-app.use('/api/orders', require('./routes/orders.routes'));
-app.use('/api/reviews', require('./routes/reviews.routes'));
-app.use('/api/complaints', require('./routes/complaints.routes'));
-app.use('/api/invoices', require('./routes/invoices.routes'));
-app.use('/api/users', require('./routes/users.routes'));
-app.use('/api/contact', require('./routes/contact.routes'));
-app.use('/api/notifications', require('./routes/notifications.routes'));
-app.use('/api/messages', require('./routes/messages.routes'));
-app.use('/api/pets', require('./routes/pets.routes'));
-app.use('/api/chat', require('./routes/chat.routes'));
-app.use('/api/veterinary', require('./routes/veterinary.routes'));
-app.use('/api/stripe', require('./routes/stripe'));
+const { registerGatewayRoutes } = require('./gateway/registerRoutes');
+registerGatewayRoutes(app);
+
+// MCP bridge (HTTP)
+const { auth } = require('./middleware/auth');
+const { createMcpRouter } = require('./mcp/mcpHttpServer');
+const { tools: chatTools } = require('./mcp/tools/chat.mcpTools');
+
+const mcpTools = {
+  ...chatTools,
+};
+
+// If you want MCP to be publicly accessible in demo/local, keep auth out.
+// Default: protect MCP via auth middleware.
+const enableMcp = String(process.env.MCP_ENABLE || 'true').toLowerCase() === 'true';
+if (enableMcp) {
+  const mcpRouter = createMcpRouter({ tools: mcpTools });
+  app.use('/api', auth, mcpRouter);
+  console.log(' MCP bridge enabled at /api/mcp and /api/mcp/invoke');
+} else {
+  console.log(' MCP bridge disabled (MCP_ENABLE=false)');
+}
+
 
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy',
     timestamp: new Date().toISOString(),
-    message: 'PetfoodTN Backend API ready',
+    message: 'PetFoodTN Backend API ready',
     uptime: process.uptime()
   });
 });
@@ -182,13 +147,81 @@ app.get('/', (req, res) => {
   res.json({ message: 'PetfoodTN Backend API running! Visit /health for status.' });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-console.log(` Server running on http://localhost:${PORT} and http://192.168.0.114:${PORT} (accessible from 0.0.0.0)`);
-}).on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    console.error(` Port ${PORT} is already in use. Is another backend server running?`);
-  } else {
-    console.error(' Server failed to start:', err.message);
-  }
-  process.exit(1);
-});
+const tryListen = (port) => {
+  const httpServer = http.createServer(app);
+  const io = new IOServer(httpServer, {
+    cors: {
+      origin: true,
+      credentials: true,
+    },
+  });
+  setNotificationIo(io);
+
+  io.on('connection', (socket) => {
+    console.log(' Socket connected:', socket.id);
+
+    socket.on('join', (data) => {
+      const rooms = [];
+      if (data?.room) rooms.push(data.room);
+      if (data?.userId) rooms.push(`user:${data.userId}`);
+      if (data?.role) rooms.push(`role:${data.role}`);
+      rooms.forEach((room) => {
+        socket.join(room);
+        console.log(` Socket ${socket.id} joined room ${room}`);
+      });
+    });
+
+    socket.on('chat:message', async (payload) => {
+      try {
+        const room = payload?.room || 'global';
+        // Broadcast to room
+        io.to(room).emit('chat:message', payload);
+        // Persist message if prisma available
+        try {
+          const { prisma, isDemoMode } = require('./prismaClient');
+          if (!isDemoMode()) {
+            await prisma.message.create({
+              data: {
+                senderType: payload.senderType || 'client',
+                senderId: payload.senderId || null,
+                receiverType: payload.receiverType || 'admin',
+                receiverId: payload.receiverId || null,
+                orderId: payload.orderId || null,
+                message: payload.content || '',
+                isRead: false,
+              }
+            });
+          }
+        } catch (e) {
+          // ignore persistence errors in socket flow
+          console.warn('Socket persistence skipped:', e?.message || e);
+        }
+      } catch (err) {
+        console.error('Socket chat handler error:', err?.message || err);
+      }
+    });
+
+    socket.on('disconnect', (reason) => {
+      console.log('🔌 Socket disconnected:', socket.id, reason);
+    });
+  });
+
+  httpServer.listen(port, '0.0.0.0', () => {
+    console.log(`✅ Server (HTTP+Socket.IO) running on http://localhost:${port}`);
+  });
+
+  httpServer.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`⚠️ Port ${port} already in use. Trying next port...`);
+      // Try next port
+      tryListen(port + 1);
+      return;
+    }
+
+    console.error('Server failed to start:', err.message);
+    process.exit(1);
+  });
+};
+
+tryListen(BASE_PORT);
+

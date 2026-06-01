@@ -6,6 +6,7 @@ const {
   updateProduct,
   deleteProduct,
   getRecommendations,
+  getPetProductRecommendations,
   getNearbyProducts,
   adjustStock,
   getLowStock,
@@ -16,6 +17,7 @@ const router = express.Router();
 
 // Public / authenticated
 router.get('/', getProducts);
+router.get('/recommendations/pets', auth, getPetProductRecommendations);
 router.get('/recommendations', auth, getRecommendations);
 router.get('/nearby', auth, getNearbyProducts);
 

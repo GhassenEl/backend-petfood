@@ -1,13 +1,13 @@
 # PetfoodTN — Backend
 
-Node.js / Express / MongoDB backend powering the PetfoodTN platform (admin, client and delivery roles).
+Node.js / Express / SQLite backend powering the PetfoodTN platform (admin, client and delivery roles).
 
 Front-end repo: https://github.com/GhassenEl/frontend-petfood
 
 ## Stack
 
 - Node.js + Express
-- MongoDB Atlas via Mongoose
+- Prisma + SQLite via @prisma/client
 - JWT authentication
 - bcryptjs for password hashing
 - Stripe (optional)
@@ -18,32 +18,23 @@ Front-end repo: https://github.com/GhassenEl/frontend-petfood
 ```bash
 npm install
 cp .env.example .env
-# edit .env with your MongoDB Atlas credentials and a strong JWT_SECRET
-npm run seed    # populates Atlas with demo users / products / orders
+# edit .env with a strong JWT_SECRET and optional DEMO_MODE
+npm run seed    # populates demo products/orders/messages if users already exist
 npm run dev     # nodemon on http://localhost:5002
 ```
 
-## Demo accounts (after seeding)
-
-| Role    | Email                  | Password         |
-|---------|------------------------|------------------|
-| Admin   | admin@petfood.tn       | PetfoodTN2024!   |
-| Client  | client@petfood.tn      | MonChat123!      |
-| Livreur | livreur@petfood.tn     | Livreur123!      |
-
-> The auth controller prefers MongoDB; the hard-coded demo accounts are only used as a fallback when MongoDB is unreachable.
+> The auth controller now uses Prisma and SQL. Demo-mode fallback still works when the database is unavailable.
 
 ## Project layout
 
 ```
 backend/
-├── config/         # express middleware, helpers
 ├── controllers/    # request handlers (auth, products, orders, reviews, ...)
 ├── middleware/     # JWT auth middleware
-├── models/         # Mongoose schemas
+├── prisma/         # Prisma schema and generated client
 ├── routes/         # API route definitions
-├── scripts/seed.js # Atlas seeder
 ├── utils/          # demoStore fallback, helpers
+├── seed.js         # SQLite/Prisma seeder
 └── server.js       # entry point
 ```
 

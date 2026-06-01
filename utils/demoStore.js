@@ -1,13 +1,12 @@
 const clone = (value) => JSON.parse(JSON.stringify(value));
+const { resolveRegionFromAddress } = require('./regions');
 
 const now = () => new Date().toISOString();
 const createId = (prefix) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-const demoUsers = [
-  { _id: 'demo_admin', email: 'admin@petfood.tn', name: 'El JEzi Ghassen', role: 'admin', phone: '+216 70 100 100', address: 'Lac 2, Tunis', petType: 'dog', petAge: 3, preferences: ['premium'], favoriteCategories: ['nourriture', 'snack'], pets: [{ name: 'Tweety', type: 'bird', breed: 'Perroquet', birthDate: new Date('2024-01-01'), weight: 0.035, notes: 'Oiseau actif' }] },
-  { _id: 'demo_client', email: 'client@petfood.tn', name: 'Client Test', role: 'client', phone: '+216 20 000 000', address: 'Ariana, Tunis', petType: 'cat', petAge: 2, preferences: ['bio'], favoriteCategories: ['nourriture', 'hygiène'], pets: [{ name: 'Rex', type: 'dog', breed: 'Labrador', birthDate: new Date('2023-04-01'), weight: 28.5, notes: 'Chien sportif' }, { name: 'Mimi', type: 'cat', breed: 'Persan', birthDate: new Date('2024-03-01'), weight: 4.2, notes: 'Chat calme' }] },
-  { _id: 'demo_livreur', email: 'livreur@petfood.tn', name: 'Ahmed Ben Salah', role: 'livreur', phone: '+216 55 123 456', address: 'Centre-ville Tunis, Rue de Marseille', petType: 'dog', petAge: 4, preferences: ['sport'], favoriteCategories: [], pets: [{ name: 'Max', type: 'dog', breed: 'Berger Allemand', birthDate: new Date('2022-06-01'), weight: 35, notes: 'Chien de garde' }] },
-];
+// demoUsers removed to eliminate demo accounts.
+// Users are created via normal signup/admin flows.
+const demoUsers = [];
 
 const demoProducts = [
   {
@@ -108,101 +107,24 @@ const demoProducts = [
   },
 ];
 
-const baseOrder = {
-  _id: 'ord_demo_1',
-  userId: demoUsers[1],
-  items: [
-    {
-      productId: {
-        _id: demoProducts[0]._id,
-        name: demoProducts[0].name,
-        price: demoProducts[0].price,
-        discount: demoProducts[0].discount,
-        imageUrl: demoProducts[0].imageUrl,
-      },
-      quantity: 1,
-      price: 49.3,
-    },
-    {
-      productId: {
-        _id: demoProducts[4]._id,
-        name: demoProducts[4].name,
-        price: demoProducts[4].price,
-        discount: demoProducts[4].discount,
-        imageUrl: demoProducts[4].imageUrl,
-      },
-      quantity: 2,
-      price: 11.2,
-    },
-  ],
-  total: 71.7,
-  status: 'pending',
-  paymentMethod: 'cash',
-  address: 'Ariana, Tunis',
-  phone: '+216 20 000 000',
-  deliveryLocation: null,
-  createdAt: '2026-04-23T08:30:00.000Z',
-};
-
-// Generate extra demo orders for livreur data
-const { generateOrders, generateMessages } = require('./demoData');
-const extraOrders = generateOrders(28);
-
+// Keep store base structure but remove order/user references that depended on demoUsers.
 let store = {
   users: clone(demoUsers),
   products: clone(demoProducts),
-  orders: [clone(baseOrder), ...extraOrders],
-  invoices: [
-    {
-      _id: 'inv_demo_1',
-      userId: clone(demoUsers[1]),
-      orderId: clone(baseOrder),
-      amount: baseOrder.total,
-      status: 'unpaid',
-      paymentMethod: 'cash',
-      issuedAt: '2026-04-23T08:35:00.000Z',
-      paidAt: null,
-    },
-    ...extraOrders.filter(o => o.status !== 'cancelled').map(o => ({
-      _id: createId('inv'),
-      userId: clone(demoUsers[1]),
-      orderId: clone(o),
-      amount: o.total,
-      status: o.status === 'paid' || o.status === 'delivered' || o.status === 'shipped' ? 'paid' : 'unpaid',
-      paymentMethod: o.paymentMethod,
-      issuedAt: o.createdAt,
-      paidAt: (o.status === 'paid' || o.status === 'delivered' || o.status === 'shipped') ? o.createdAt : null,
-    })),
-  ],
-  reviews: [
-    {
-      _id: 'rev_demo_1',
-      userId: clone(demoUsers[1]),
-      productId: { _id: demoProducts[0]._id, name: demoProducts[0].name, imageUrl: demoProducts[0].imageUrl },
-      rating: 5,
-      comment: 'Produit tres apprecie par mon chien, livraison rapide et emballage propre.',
-      emotion: 'happy',
-      createdAt: '2026-04-22T15:10:00.000Z',
-    },
-  ],
-  complaints: [
-    {
-      _id: 'cmp_demo_1',
-      userId: clone(demoUsers[1]),
-      subject: 'Delai de livraison',
-      message: 'Je souhaite un suivi plus detaille pour ma prochaine livraison.',
-      orderId: baseOrder._id,
-      status: 'pending',
-      response: '',
-      createdAt: '2026-04-22T17:20:00.000Z',
-    },
-  ],
-  messages: generateMessages(),
+  orders: [],
+  invoices: [],
+  reviews: [],
+  serviceRatings: [],
+  complaints: [],
+  messages: [],
 };
 
 const getUserById = (id) => store.users.find((user) => user._id === id);
 
-const getProducts = () => clone(store.products);
+const getProducts = () => {
+  const list = clone(store.products);
+  return Array.isArray(list) && list.length ? list : clone(demoProducts);
+};
 const getUsers = () => clone(store.users);
 
 const createProduct = (payload) => {
@@ -247,23 +169,62 @@ const deleteProduct = (id) => {
 };
 
 const getOrders = (user) => {
-  if (user.role === 'admin' || user.role === 'livreur') return clone(store.orders);
-  return clone(store.orders.filter((order) => order.userId._id === user._id));
+  if (!user) return clone(store.orders);
+  if (user.role === 'admin') return clone(store.orders);
+  if (user.role === 'livreur') {
+    const livreur = getUserById(user._id);
+    if (livreur?.region) {
+      return clone(store.orders.filter((order) => order.region === livreur.region));
+    }
+    return clone(store.orders);
+  }
+  return clone(store.orders.filter((order) => order.userId && order.userId._id === user._id));
 };
 
 const createOrder = (user, payload) => {
-  const items = (payload.items || []).map((item) => {
-    const product = store.products.find((entry) => entry._id === item.productId || entry._id === item.productId?._id);
+  const rawItems = payload.items || [];
+
+  const items = [];
+  for (const item of rawItems) {
+    const product = store.products.find(
+      (entry) => entry._id === item.productId || entry._id === item.productId?._id
+    );
+
     const quantity = Number(item.quantity || 1);
-    const finalPrice = Number(item.price ?? ((product?.price || 0) * (1 - (product?.discount || 0) / 100)).toFixed(2));
-    return {
-      productId: product
-        ? { _id: product._id, name: product.name, price: product.price, discount: product.discount, imageUrl: product.imageUrl }
-        : item.productId,
+    if (!product || !Number.isFinite(quantity) || quantity <= 0) {
+      continue;
+    }
+
+    // Option 2 (user request): retirer automatiquement les items en rupture
+    if (product.stock < quantity) {
+      continue;
+    }
+
+    // Decrement stock in demo
+    product.stock = Number(product.stock) - quantity;
+
+    const finalPrice = Number(
+      item.price ?? ((product.price || 0) * (1 - (product.discount || 0) / 100)).toFixed(2)
+    );
+
+    items.push({
+      productId: {
+        _id: product._id,
+        name: product.name,
+        price: product.price,
+        discount: product.discount,
+        imageUrl: product.imageUrl,
+      },
       quantity,
       price: finalPrice,
-    };
-  });
+    });
+  }
+
+  if (!items.length) {
+    const error = new Error('Aucun produit disponible en stock');
+    error.status = 400;
+    throw error;
+  }
 
   const total = Number(items.reduce((sum, item) => sum + item.price * item.quantity, 0).toFixed(2));
   const order = {
@@ -275,6 +236,7 @@ const createOrder = (user, payload) => {
     paymentMethod: payload.paymentMethod || 'cash',
     address: payload.address || '',
     phone: payload.phone || '',
+    region: resolveRegionFromAddress(payload.address),
     deliveryLocation: payload.location || payload.deliveryLocation || null,
     createdAt: now(),
   };
@@ -295,14 +257,17 @@ const createOrder = (user, payload) => {
   return { order: clone(order), invoice: clone(invoice) };
 };
 
+
 const updateOrder = (id, payload) => {
   const index = store.orders.findIndex((order) => order._id === id);
   if (index === -1) return null;
   store.orders[index] = { ...store.orders[index], ...payload };
+
   const invoiceIndex = store.invoices.findIndex((invoice) => invoice.orderId._id === id);
   if (invoiceIndex !== -1) {
     store.invoices[invoiceIndex].orderId = clone(store.orders[index]);
   }
+
   return clone(store.orders[index]);
 };
 
@@ -314,6 +279,7 @@ const deleteOrder = (id) => {
 };
 
 const getInvoices = (user) => {
+  if (!user) return clone(store.invoices);
   if (user.role === 'admin') return clone(store.invoices);
   return clone(store.invoices.filter((invoice) => invoice.userId._id === user._id));
 };
@@ -326,14 +292,24 @@ const payInvoice = (user, invoiceId, paymentMethod) => {
   store.invoices[index].status = 'paid';
   store.invoices[index].paidAt = now();
   store.invoices[index].paymentMethod = paymentMethod || store.invoices[index].paymentMethod;
-  updateOrder(store.invoices[index].orderId._id, { status: 'paid', paymentMethod: store.invoices[index].paymentMethod });
+
+  updateOrder(store.invoices[index].orderId._id, {
+    status: 'paid',
+    paymentMethod: store.invoices[index].paymentMethod,
+  });
+
   store.invoices[index].orderId = clone(store.orders.find((order) => order._id === store.invoices[index].orderId._id));
   return clone(store.invoices[index]);
 };
 
 const getReviews = (user) => {
+  if (!user) return clone(store.reviews);
   if (user.role === 'admin') return clone(store.reviews);
-  return clone(store.reviews.filter((review) => review.userId._id === user._id));
+  return clone(store.reviews.filter((review) => {
+    const uid = review.userId?._id || review.userId?.id || review.userId;
+    const userUid = user._id || user.id;
+    return uid === userUid;
+  }));
 };
 
 const createReview = (user, payload) => {
@@ -341,7 +317,9 @@ const createReview = (user, payload) => {
   const review = {
     _id: createId('rev'),
     userId: { _id: user._id, email: user.email, name: user.name, role: user.role },
-    productId: product ? { _id: product._id, name: product.name, imageUrl: product.imageUrl } : { _id: payload.productId, name: payload.productName || 'Produit' },
+    productId: product
+      ? { _id: product._id, name: product.name, imageUrl: product.imageUrl }
+      : { _id: payload.productId, name: payload.productName || 'Produit' },
     rating: Number(payload.rating || 5),
     comment: payload.comment,
     emotion: payload.emotion || 'neutral',
@@ -369,9 +347,96 @@ const deleteReview = (id) => {
   return clone(existing);
 };
 
+const getServiceRatings = (user) => {
+  if (!user) return clone(store.serviceRatings);
+  if (user.role === 'admin') return clone(store.serviceRatings);
+  return clone(store.serviceRatings.filter((r) => r.userId._id === user._id));
+};
+
+const getEligibleServiceRatings = (user) => {
+  const orders = getOrders(user)
+    .filter((o) => o.status === 'delivered')
+    .map((o) => ({
+      orderId: o._id,
+      region: o.region || user.region || 'Tunis',
+      total: o.total,
+      deliveredAt: o.deliveredAt || o.updatedAt,
+    }));
+  const ratedOrderIds = new Set(
+    store.serviceRatings
+      .filter((r) => r.userId._id === user._id && r.type === 'delivery')
+      .map((r) => r.orderId)
+  );
+  return {
+    delivery: orders.filter((o) => !ratedOrderIds.has(o.orderId)),
+    veterinary: [
+      {
+        appointmentId: 'demo_appt_vet_1',
+        petName: 'Mimi',
+        animalType: 'cat',
+        date: now(),
+        visitMode: 'cabinet',
+        vetName: 'Dr. Ben Ali',
+      },
+    ].filter(
+      (a) =>
+        !store.serviceRatings.some(
+          (r) => r.userId._id === user._id && r.appointmentId === a.appointmentId
+        )
+    ),
+  };
+};
+
+const createServiceRating = (user, payload) => {
+  const rating = {
+    _id: createId('srv'),
+    id: createId('srv'),
+    userId: { _id: user._id, name: user.name, email: user.email },
+    type: payload.type,
+    rating: Number(payload.rating || 5),
+    comment: payload.comment || '',
+    region: payload.region || user.region || 'Tunis',
+    orderId: payload.orderId || null,
+    appointmentId: payload.appointmentId || null,
+    targetUserId: payload.targetUserId || null,
+    createdAt: now(),
+  };
+  store.serviceRatings.unshift(rating);
+  return clone(rating);
+};
+
+const getServiceRatingStats = (type = 'delivery') => {
+  const rows = store.serviceRatings.filter((r) => r.type === type && r.region);
+  const byRegion = {};
+  rows.forEach((r) => {
+    const key = r.region || 'Autre';
+    if (!byRegion[key]) byRegion[key] = { sum: 0, count: 0 };
+    byRegion[key].sum += r.rating;
+    byRegion[key].count += 1;
+  });
+  return Object.entries(byRegion).map(([region, s]) => ({
+    region,
+    count: s.count,
+    average: Number((s.sum / s.count).toFixed(1)),
+  }));
+};
+
+const deleteServiceRating = (id, user) => {
+  const existing = store.serviceRatings.find((r) => r._id === id || r.id === id);
+  if (!existing) return null;
+  if (user.role !== 'admin' && existing.userId._id !== user._id) return null;
+  store.serviceRatings = store.serviceRatings.filter((r) => r._id !== id && r.id !== id);
+  return clone(existing);
+};
+
 const getComplaints = (user) => {
+  if (!user) return clone(store.complaints);
   if (user.role === 'admin') return clone(store.complaints);
-  return clone(store.complaints.filter((complaint) => complaint.userId._id === user._id));
+  return clone(store.complaints.filter((complaint) => {
+    const uid = complaint.userId?._id || complaint.userId?.id || complaint.userId;
+    const userUid = user._id || user.id;
+    return uid === userUid;
+  }));
 };
 
 const createComplaint = (user, payload) => {
@@ -406,25 +471,180 @@ const deleteComplaint = (id) => {
   return clone(existing);
 };
 
-// Messages helpers for livreur chat
+// Messages helpers
 const getMessages = (user) => {
   if (!user) return clone(store.messages);
-  return clone(store.messages.filter(
-    (msg) => msg.sender.userId === user._id || msg.receiver.userId === user._id
-  ));
+  const uid = user.id || user._id;
+  return clone(
+    store.messages.filter((msg) => {
+      const senderId = msg.senderId || msg.sender?.userId || msg.sender?.id;
+      const receiverId = msg.receiverId || msg.receiver?.userId || msg.receiver?.id;
+      return senderId === uid || receiverId === uid;
+    })
+  );
 };
 
 const createMessage = (user, payload) => {
+  const senderId = user.id || user._id;
+  const receiverId = payload.receiverId === 'admin' ? 'demo_admin' : (payload.receiverId || 'demo_admin');
   const message = {
     _id: createId('msg'),
-    sender: { type: user.role, userId: user._id },
-    receiver: { type: payload.receiverType || 'admin', userId: payload.receiverId || 'demo_admin' },
+    id: undefined,
+    senderId,
+    receiverId,
+    senderType: user.role,
+    receiverType: payload.receiverType || (receiverId === 'demo_admin' ? 'admin' : 'client'),
+    sender: { type: user.role, role: user.role, userId: senderId, id: senderId, name: user.name },
+    receiver: { type: payload.receiverType || 'admin', role: payload.receiverType || 'admin', userId: receiverId, id: receiverId, name: payload.receiverName || 'Administration' },
     message: payload.message.trim(),
     createdAt: now(),
     isRead: false,
   };
+  message.id = message._id;
   store.messages.push(message);
   return clone(message);
+};
+
+// Veterinary contact requests (in-memory)
+let veterinaryContactRequests = [];
+
+const getVeterinaryContactRequests = (ownerId, isAdmin) => {
+  const list = veterinaryContactRequests.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  if (isAdmin) return clone(list);
+  return clone(list.filter(r => r.ownerId === ownerId));
+};
+
+const createVeterinaryContactRequest = (user, payload) => {
+  if (!payload?.subject) throw new Error('Sujet requis');
+  if (!payload?.message) throw new Error('Message requis');
+
+  const ownerId = user?.id || user?._id;
+
+  const reqItem = {
+    _id: createId('vetreq'),
+    ownerId,
+    animalType: payload.animalType || 'other',
+    petName: payload.petName || '',
+    subject: payload.subject,
+    message: payload.message,
+    preferredDate: payload.preferredDate || '',
+    visitMode: ['home', 'online'].includes(payload.visitMode) ? payload.visitMode : 'cabinet',
+    homeAddress: payload.visitMode === 'home' ? (payload.homeAddress || '') : null,
+    status: payload.status || 'pending',
+    createdAt: now(),
+  };
+
+  veterinaryContactRequests.unshift(reqItem);
+  return clone(reqItem);
+};
+
+const updateVeterinaryContactRequest = (id, payload) => {
+  const index = veterinaryContactRequests.findIndex((req) => req._id === id || req.id === id);
+  if (index === -1) {
+    throw new Error('Demande introuvable');
+  }
+  veterinaryContactRequests[index] = {
+    ...veterinaryContactRequests[index],
+    ...payload,
+    updatedAt: now(),
+  };
+  return clone(veterinaryContactRequests[index]);
+};
+
+// Demo appointments data
+let demoAppointments = [];
+const createPetAppointments = ({ ownerId, count = 10 } = {}) => {
+  if (!ownerId) return [];
+  
+  const petNames = ['Fluffy', 'Max', 'Bella', 'Charlie', 'Luna', 'Buddy', 'Daisy', 'Rocky', 'Milo', 'Coco'];
+  const animalTypes = ['cat', 'dog', 'rabbit', 'hamster', 'bird', 'fish'];
+  const appointmentTypes = [
+    'veterinary_consultation',
+    'vaccination',
+    'checkup',
+    'dental_cleaning',
+    'surgery_followup',
+    'grooming',
+  ];
+  
+  const randomCode = (length) =>
+    Array.from({ length }, () => 'abcdefghijklmnopqrstuvwxyz'[Math.floor(Math.random() * 26)]).join('');
+
+  const buildMeetingLink = (status) =>
+    status === 'confirmed' ? `https://meet.google.com/${randomCode(3)}-${randomCode(4)}-${randomCode(3)}` : null;
+  
+  const appointments = [];
+  const now = new Date();
+  
+  for (let i = 0; i < count; i++) {
+    const date = new Date(now);
+    date.setDate(date.getDate() + (i % 30));
+    date.setHours(9 + (i % 8), 0, 0, 0);
+    const status = i % 3 === 0 ? 'confirmed' : i % 3 === 1 ? 'scheduled' : 'completed';
+    
+    appointments.push({
+      _id: createId(`appt_${ownerId}`),
+      id: createId(`appt_${ownerId}`),
+      ownerId,
+      petName: petNames[i % petNames.length],
+      animalType: animalTypes[i % animalTypes.length],
+      type: appointmentTypes[i % appointmentTypes.length],
+      category: 'vet',
+      date: date.toISOString(),
+      status,
+      notes: `Appointment ${i + 1}`,
+      meetingLink: buildMeetingLink(status),
+      reminderSent: i % 2 === 0,
+      createdAt: new Date(now.getTime() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+  }
+  
+  return appointments;
+};
+
+const createPlatformEvents = ({ ownerId, count = 12 } = {}) => {
+  if (!ownerId) return [];
+
+  const samples = [
+    { type: 'anniversaire', title: 'Anniversaire de Mimi', petName: 'Mimi', animalType: 'cat', notes: 'Gâteau et animations pour chats.' },
+    { type: 'salle de sport', title: 'Séance agility — Rex', petName: 'Rex', animalType: 'dog', notes: 'Parcours agility débutant, 45 min.' },
+    { type: 'competitions', title: 'Concours beauté canin', petName: 'Luna', animalType: 'dog', notes: 'Inscription ouverte — catégorie junior.' },
+    { type: 'coiffure', title: 'Toilettage express', petName: 'Oscar', animalType: 'cat', notes: 'Bain + brushing, créneaux 14h-18h.' },
+    { type: 'cadeau', title: 'Offre croquettes -20%', petName: 'Tous', animalType: 'other', notes: 'Promo PetfoodTN ce week-end.' },
+    { type: 'autre', title: 'Atelier nutrition', petName: 'Buddy', animalType: 'dog', notes: 'Conseils NutriPro avec un expert.' },
+  ];
+
+  const events = [];
+  const now = new Date();
+
+  for (let i = 0; i < count; i += 1) {
+    const sample = samples[i % samples.length];
+    const date = new Date(now);
+    date.setDate(date.getDate() + (i % 21) + 1);
+    date.setHours(10 + (i % 7), (i % 2) * 30, 0, 0);
+
+    events.push({
+      _id: createId(`event_${ownerId}`),
+      id: createId(`event_${ownerId}`),
+      ownerId: i % 4 === 0 ? ownerId : ownerId,
+      petName: sample.petName,
+      title: sample.title,
+      animalType: sample.animalType,
+      type: sample.type,
+      category: 'event',
+      isPublic: i % 3 !== 1,
+      date: date.toISOString(),
+      status: i % 4 === 0 ? 'confirmed' : 'scheduled',
+      notes: sample.notes,
+      meetingLink: i % 5 === 0 ? `https://meet.google.com/demo-${i}` : null,
+      reminderSent: false,
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+    });
+  }
+
+  return events;
 };
 
 module.exports = {
@@ -444,11 +664,23 @@ module.exports = {
   createReview,
   updateReview,
   deleteReview,
+  getServiceRatings,
+  getEligibleServiceRatings,
+  createServiceRating,
+  getServiceRatingStats,
+  deleteServiceRating,
   getComplaints,
   createComplaint,
   updateComplaint,
   deleteComplaint,
   getMessages,
   createMessage,
+  getVeterinaryContactRequests,
+  createVeterinaryContactRequest,
+  updateVeterinaryContactRequest,
+  createPetAppointments,
+  createPlatformEvents,
 };
+
+
 

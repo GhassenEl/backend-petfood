@@ -1,7 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const mongoose = require('mongoose');
-const User = require('../models/User');
+const { prisma, isDemoMode } = require('../prismaClient');
+const { normalizeEmail, validateEmail, validatePassword } = require('../utils/authValidation');
 
 const demoUsers = {
   'admin@petfood.tn': {
@@ -23,86 +23,117 @@ const demoUsers = {
     email: 'livreur@petfood.tn',
     name: 'Livreur Test',
     role: 'livreur',
+    region: 'Tunis',
     demoPassword: 'Livreur123!'
   },
+  'vet@petfood.tn': {
+    _id: 'demo_vet',
+    email: 'vet@petfood.tn',
+    name: 'Dr. Salma Khelifi',
+    role: 'vet',
+    demoPassword: 'Vet2024!'
+  },
 };
-
-const isDemoMode = () => !mongoose.connection || mongoose.connection.readyState !== 1;
 
 const register = async (req, res) => {
   try {
     if (isDemoMode()) {
-      return res.status(400).json({ error: 'Register disabled in demo mode - use demo accounts' });
+      return res.status(400).json({
+        error: 'Inscription désactivée en mode démo. Utilisez un compte de démonstration.',
+      });
     }
-    const { email, password, role } = req.body;
-    const name = req.body.name || [req.body.prenom, req.body.nom].filter(Boolean).join(' ').trim();
+
+    const { password, role } = req.body;
+    const email = normalizeEmail(req.body.email);
+    const name = (req.body.name || [req.body.prenom, req.body.nom].filter(Boolean).join(' ')).trim();
 
     if (!email || !password || !name) {
-      return res.status(400).json({ error: 'Email, password and name are required' });
+      return res.status(400).json({ error: 'Email, mot de passe et nom requis.' });
+    }
+
+    const emailErr = validateEmail(email);
+    if (emailErr) return res.status(400).json({ error: emailErr });
+
+    const passwordErr = validatePassword(password);
+    if (passwordErr) return res.status(400).json({ error: passwordErr });
+
+    if (role === 'admin') {
+      return res.status(403).json({ error: 'Création de compte administrateur interdite.' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
-    const user = new User({
-      email: email.toLowerCase(),
-      password: hashedPassword,
-      name,
-      phone: req.body.phone || req.body.telephone || '',
-      address: req.body.address || '',
-      role: role || 'client',
+    const user = await prisma.user.create({
+      data: {
+        email,
+        password: hashedPassword,
+        name,
+        phone: req.body.phone || req.body.telephone || '',
+        address: req.body.address || '',
+        role: 'client',
+      }
     });
-    await user.save();
+
     const token = jwt.sign(
-      { id: String(user._id), email: user.email, name: user.name, role: user.role },
+      { id: user.id, email: user.email, name: user.name, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
-    res.status(201).json({ token, user: { id: user._id, email, name, role } });
+
+    res.status(201).json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role } });
   } catch (error) {
     console.error('Register error:', error);
-    res.status(400).json({ error: error.message });
+    if (error.code === 'P2002') {
+      return res.status(400).json({ error: 'Un compte existe déjà avec cet email.' });
+    }
+    res.status(400).json({ error: error.message || 'Erreur lors de l\'inscription.' });
   }
 };
 
 const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const email = normalizeEmail(req.body.email);
+    const { password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+      return res.status(400).json({ error: 'Email et mot de passe requis.' });
     }
+
+    const emailErr = validateEmail(email);
+    if (emailErr) return res.status(400).json({ error: emailErr });
+
+    const passwordErr = validatePassword(password);
+    if (passwordErr) return res.status(400).json({ error: passwordErr });
 
     let user;
-
-    // Prefer DB lookup (gives real ObjectId so the rest of the API works)
     if (!isDemoMode()) {
-      try {
-        user = await User.findOne({ email: email.toLowerCase() });
-      } catch (e) {
-        console.error('Login DB error:', e);
-      }
+      user = await prisma.user.findUnique({ where: { email } });
       if (user) {
+        if (user.isActive === false) {
+          return res.status(403).json({ error: 'Compte désactivé. Contactez l\'administration.' });
+        }
         const ok = await bcrypt.compare(password, user.password);
-        if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
+        if (!ok) {
+          return res.status(401).json({ error: 'Identifiants incorrects. Vérifiez votre email et mot de passe.' });
+        }
       }
     }
 
-    // Fallback: hard-coded demo accounts (only used when DB is offline)
     if (!user) {
-      const demo = demoUsers[email.toLowerCase()];
+      const demo = demoUsers[email];
       if (demo) {
         if (password !== demo.demoPassword) {
-          return res.status(401).json({ error: 'Invalid credentials' });
+          return res.status(401).json({ error: 'Identifiants incorrects. Vérifiez votre email et mot de passe.' });
         }
         user = demo;
       }
     }
 
     if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: 'Identifiants incorrects. Vérifiez votre email et mot de passe.' });
     }
 
     const normalizedUser = {
-      id: String(user._id),
+      id: String(user.id || user._id),
       email: user.email,
       name: user.name,
       role: user.role,
@@ -117,47 +148,58 @@ const login = async (req, res) => {
     res.json({ token, user: normalizedUser });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Erreur serveur lors de la connexion.' });
   }
 };
 
 const forgotPassword = async (req, res) => {
   try {
-    const { email } = req.body;
+    const email = normalizeEmail(req.body.email);
     if (!email) {
-      return res.status(400).json({ error: 'Email required' });
+      return res.status(400).json({ error: 'Adresse email requise.' });
     }
+
+    const emailErr = validateEmail(email);
+    if (emailErr) return res.status(400).json({ error: emailErr });
 
     let user;
     if (isDemoMode()) {
-      user = demoUsers[email.toLowerCase()];
+      user = demoUsers[email];
       if (!user) {
-        return res.status(404).json({ error: 'Email not found' });
+        return res.status(404).json({ error: 'Aucun compte associé à cet email.' });
       }
     } else {
-      user = await User.findOne({ email: email.toLowerCase() });
+      user = await prisma.user.findUnique({ where: { email } });
       if (!user) {
-        return res.status(404).json({ error: 'Email not found' });
+        return res.status(404).json({ error: 'Aucun compte associé à cet email.' });
+      }
+      if (user.isActive === false) {
+        return res.status(403).json({ error: 'Compte désactivé. Contactez l\'administration.' });
       }
     }
 
-    // Generate reset token (15min expiry)
     const resetToken = jwt.sign(
-      { id: user._id, email: user.email },
+      { id: user.id || user._id, email: user.email },
       process.env.JWT_SECRET,
       { expiresIn: '15m' }
     );
 
-    // In production: sendEmail(email, resetToken)
     console.log(`🔄 Reset token for ${email}: ${resetToken}`);
-    console.log(`💡 Use this token in /reset-password within 15min`);
+    console.log('💡 Lien dev : /reset-password?token=...');
 
-    res.json({
-      message: 'Reset link sent to email (check console for token in dev)',
-      expiresIn: 15 * 60 * 1000 // ms
-    });
+    const response = {
+      message: 'Si un compte existe, un lien de réinitialisation a été envoyé par email.',
+      expiresIn: 15 * 60 * 1000,
+    };
+
+    if (process.env.NODE_ENV !== 'production') {
+      response.resetToken = resetToken;
+      response.devNote = 'Mode développement : utilisez le lien ci-dessous (valide 15 min).';
+    }
+
+    res.json(response);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Impossible d\'envoyer le lien. Réessayez plus tard.' });
   }
 };
 
@@ -165,42 +207,96 @@ const resetPassword = async (req, res) => {
   try {
     const { token, password } = req.body;
     if (!token || !password) {
-      return res.status(400).json({ error: 'Token and password required' });
+      return res.status(400).json({ error: 'Token et mot de passe requis.' });
     }
 
-    // Verify reset token
+    const passwordErr = validatePassword(password);
+    if (passwordErr) return res.status(400).json({ error: passwordErr });
+
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     let user;
     if (isDemoMode()) {
       user = demoUsers[decoded.email];
       if (!user) {
-        return res.status(404).json({ error: 'User not found' });
+        return res.status(404).json({ error: 'Utilisateur introuvable.' });
       }
-      // Demo: log password change (no real DB update)
       console.log(`🔓 Demo password reset for ${decoded.email} - NEW: ${password}`);
-      return res.json({ message: 'Password reset successful (demo mode - logged)' });
-    } else {
-      user = await User.findById(decoded.id);
-      if (!user || user.email !== decoded.email) {
-        return res.status(401).json({ error: 'Invalid token' });
-      }
-
-      // Update password
-      user.password = await bcrypt.hash(password, 12);
-      await user.save();
+      return res.json({ message: 'Mot de passe réinitialisé avec succès.' });
     }
 
-    res.json({ message: 'Password reset successful' });
+    user = await prisma.user.findUnique({ where: { id: decoded.id } });
+    if (!user || user.email !== decoded.email) {
+      return res.status(401).json({ error: 'Lien invalide ou expiré.' });
+    }
+
+    if (user.isActive === false) {
+      return res.status(403).json({ error: 'Compte désactivé. Contactez l\'administration.' });
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { password: await bcrypt.hash(password, 12) }
+    });
+
+    res.json({ message: 'Mot de passe réinitialisé avec succès.' });
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ error: 'Token expired (15min)' });
+      return res.status(401).json({ error: 'Lien expiré (15 minutes). Demandez un nouveau lien.' });
     }
     if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({ error: 'Invalid token' });
+      return res.status(401).json({ error: 'Lien invalide ou expiré.' });
     }
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Impossible de réinitialiser le mot de passe.' });
   }
 };
 
-module.exports = { register, login, forgotPassword, resetPassword };
+const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Mot de passe actuel et nouveau mot de passe requis.' });
+    }
+
+    const passwordErr = validatePassword(newPassword);
+    if (passwordErr) return res.status(400).json({ error: passwordErr });
+
+    if (currentPassword === newPassword) {
+      return res.status(400).json({ error: 'Le nouveau mot de passe doit être différent de l\'actuel.' });
+    }
+
+    const userId = req.user.id || req.user._id;
+
+    if (isDemoMode() || String(userId).startsWith('demo_')) {
+      const email = normalizeEmail(req.user.email);
+      const demo = demoUsers[email];
+      if (!demo || currentPassword !== demo.demoPassword) {
+        return res.status(401).json({ error: 'Mot de passe actuel incorrect.' });
+      }
+      demo.demoPassword = newPassword;
+      console.log(`🔐 Demo password changed for ${email}`);
+      return res.json({ message: 'Mot de passe modifié avec succès.' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return res.status(404).json({ error: 'Utilisateur introuvable.' });
+    }
+
+    const ok = await bcrypt.compare(currentPassword, user.password);
+    if (!ok) {
+      return res.status(401).json({ error: 'Mot de passe actuel incorrect.' });
+    }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { password: await bcrypt.hash(newPassword, 12) },
+    });
+
+    res.json({ message: 'Mot de passe modifié avec succès.' });
+  } catch (error) {
+    res.status(500).json({ error: 'Impossible de modifier le mot de passe.' });
+  }
+};
+
+module.exports = { register, login, forgotPassword, resetPassword, changePassword };

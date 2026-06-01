@@ -1,0 +1,627 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 String                     @id @default(uuid())
+  email              String                     @unique
+  password           String
+  name               String
+  phone              String?
+  address            String?
+  location           String?
+  region             String?
+  role               String                     @default("client")
+  isActive           Boolean                    @default(true)
+  petType            String?
+  petAge             Int?
+  preferences        String?
+  favoriteCategories String?
+  createdAt          DateTime                   @default(now())
+  chatMessages       ChatMessage[]
+  complaints         Complaint[]
+  invoices           Invoice[]
+  messagesReceived   Message[]                  @relation("ReceiverMessages")
+  messagesSent       Message[]                  @relation("SenderMessages")
+  orders             Order[]
+  pets               Pet[]
+  petAppointments    PetAppointment[]
+  petVaccines        PetVaccine[]
+  reviews            Review[]
+  contactRequests    VeterinaryContactRequest[]
+  veterinaryRecords  VeterinaryRecord[]
+  vetAppointments    PetAppointment[]           @relation("VetAppointments")
+  vetConsultations   VetConsultation[]          @relation("VetConsultations")
+  ownerConsultations VetConsultation[]          @relation("OwnerConsultations")
+  vetPrescriptions   Prescription[]             @relation("VetPrescriptions")
+  ownerPrescriptions Prescription[]             @relation("OwnerPrescriptions")
+  petFeeders         PetFeeder[]
+  nutritionPlans     NutritionPlan[]
+  leaveRequests      LeaveRequest[]
+  createdDossiers    PetMedicalDossier[]        @relation("DossierCreator")
+  signedEntries      MedicalDossierEntry[]      @relation("EntrySigner")
+  petMedicalDossiers PetMedicalDossier[]
+  loyaltyPoints      Int                        @default(0)
+  productFavorites   ProductFavorite[]
+  loyaltyLedger      LoyaltyLedger[]
+  loyaltyVouchers    LoyaltyVoucher[]
+  serviceRatings     ServiceRating[]
+  walletBalance      Float                      @default(0)
+  walletTransactions WalletTransaction[]
+}
+
+model PetFeeder {
+  id              String           @id @default(uuid())
+  ownerId         String
+  petId           String?
+  name            String           @default("Distributeur PetfoodTN")
+  deviceKey       String           @unique
+  macAddress      String?
+  status          String           @default("offline")
+  reservoirCm     Float?
+  foodGrams       Float?
+  temperature     Float?
+  humidity        Float?
+  animalPresent   Boolean          @default(false)
+  isLowFood       Boolean          @default(false)
+  pendingCommand  String?
+  lastSeenAt      DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  owner           User             @relation(fields: [ownerId], references: [id])
+  schedules       FeederSchedule[]
+  logs            FeederLog[]
+}
+
+model FeederSchedule {
+  id           String    @id @default(uuid())
+  feederId     String
+  petName      String?
+  time         String
+  portionGrams Float     @default(30)
+  enabled      Boolean   @default(true)
+  label        String?
+  createdAt    DateTime  @default(now())
+  feeder       PetFeeder @relation(fields: [feederId], references: [id], onDelete: Cascade)
+}
+
+model FeederLog {
+  id              String    @id @default(uuid())
+  feederId        String
+  eventType       String
+  portionGrams    Float?
+  animalDetected  Boolean?
+  reservoirCm     Float?
+  foodGrams       Float?
+  temperature     Float?
+  humidity        Float?
+  message         String?
+  createdAt       DateTime  @default(now())
+  feeder          PetFeeder @relation(fields: [feederId], references: [id], onDelete: Cascade)
+}
+
+model NutritionPlan {
+  id        String   @id @default(uuid())
+  ownerId   String
+  petId     String?
+  petName   String?
+  petType   String?
+  goal      String?
+  planText  String
+  source    String   @default("nutripro")
+  metadata  String?
+  createdAt DateTime @default(now())
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+}
+
+model Pet {
+  id        String    @id @default(uuid())
+  ownerId   String
+  name      String
+  type      String
+  breed     String?
+  birthDate DateTime?
+  weight    Float?
+  notes     String?
+  createdAt DateTime  @default(now())
+  owner     User      @relation(fields: [ownerId], references: [id])
+  dossier   PetMedicalDossier?
+}
+
+model Product {
+  id            String      @id @default(uuid())
+  name          String
+  price         Float
+  discountPrice Float?      @default(0)
+  discount      Float?      @default(0)
+  isOnSale      Boolean     @default(false)
+  imageUrl      String?
+  image         String?
+  icon          String?
+  description   String?
+  stock         Int         @default(0)
+  category      String      @default("nourriture")
+  animalType    String      @default("other")
+  tags          String?
+  popularity    Float       @default(0)
+  rating_avg    Float       @default(0)
+  rating_count  Int         @default(0)
+  stockHistory  String?
+  createdAt     DateTime    @default(now())
+  orderItems    OrderItem[]
+  reviews       Review[]
+  favorites     ProductFavorite[]
+}
+
+model PromoCode {
+  id             String    @id @default(uuid())
+  code           String    @unique
+  label          String?
+  discountType   String    @default("percent")
+  discountValue  Float
+  minOrderAmount Float     @default(0)
+  maxDiscount    Float?
+  maxUses        Int?
+  usedCount      Int       @default(0)
+  validFrom      DateTime?
+  validUntil     DateTime?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  orders         Order[]
+}
+
+model Order {
+  id               String      @id @default(uuid())
+  userId           String
+  total            Float
+  subtotal         Float?
+  promoCodeId      String?
+  promoCodeText    String?
+  promoDiscount    Float       @default(0)
+  status           String      @default("pending")
+  paymentMethod    String      @default("cash")
+  address          String?
+  phone            String?
+  region           String?
+  deliveryLocation String?
+  deliveryStatus   String      @default("pending")
+  assignedLivreurId String?
+  shippedAt        DateTime?
+  deliveredAt      DateTime?
+  deliveryNote     String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  invoice          Invoice?
+  messages         Message[]
+  user             User        @relation(fields: [userId], references: [id])
+  promoCode        PromoCode?  @relation(fields: [promoCodeId], references: [id])
+  items            OrderItem[]
+  serviceRatings   ServiceRating[]
+}
+
+model OrderItem {
+  id        String   @id @default(uuid())
+  orderId   String
+  productId String?
+  quantity  Int
+  price     Float
+  product   Product? @relation(fields: [productId], references: [id])
+  order     Order    @relation(fields: [orderId], references: [id])
+}
+
+model Review {
+  id          String   @id @default(uuid())
+  userId      String
+  productId   String
+  rating      Int
+  comment     String
+  emotion     String   @default("neutral")
+  aiSuggested Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  product     Product  @relation(fields: [productId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model ServiceRating {
+  id            String   @id @default(uuid())
+  userId        String
+  type          String
+  rating        Int
+  comment       String?
+  region        String?
+  orderId       String?
+  appointmentId String?
+  targetUserId  String?
+  createdAt     DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id])
+  order         Order?   @relation(fields: [orderId], references: [id])
+
+  @@unique([userId, orderId])
+  @@unique([userId, appointmentId])
+}
+
+model ProductFavorite {
+  id        String   @id @default(uuid())
+  userId    String
+  productId String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+}
+
+model LoyaltyLedger {
+  id        String   @id @default(uuid())
+  userId    String
+  points    Int
+  reason    String
+  orderId   String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model LoyaltyVoucher {
+  id           String    @id @default(uuid())
+  userId       String
+  code         String    @unique
+  discountType String    @default("percent")
+  discountValue Float
+  pointsCost   Int
+  usedAt       DateTime?
+  expiresAt    DateTime?
+  createdAt    DateTime  @default(now())
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model WalletTransaction {
+  id           String   @id @default(uuid())
+  userId       String
+  amount       Float
+  type         String
+  reason       String
+  referenceId  String?
+  balanceAfter Float
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Complaint {
+  id        String   @id @default(uuid())
+  userId    String?
+  email     String?
+  name      String?
+  subject   String
+  message   String
+  orderId   String?
+  status    String   @default("pending")
+  response  String?
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id])
+}
+
+model Invoice {
+  id            String    @id @default(uuid())
+  userId        String
+  orderId       String    @unique
+  amount        Float
+  status        String    @default("unpaid")
+  paymentMethod String    @default("cash")
+  issuedAt      DateTime  @default(now())
+  paidAt        DateTime?
+  order         Order     @relation(fields: [orderId], references: [id])
+  user          User      @relation(fields: [userId], references: [id])
+}
+
+model ChatMessage {
+  id           String   @id @default(uuid())
+  userId       String
+  role         String
+  content      String
+  products     String?
+  quickReplies String?
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id])
+}
+
+model Message {
+  id           String   @id @default(uuid())
+  senderType   String
+  senderId     String
+  receiverType String
+  receiverId   String?
+  orderId      String?
+  message      String
+  isRead       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  order        Order?   @relation(fields: [orderId], references: [id])
+  receiver     User?    @relation("ReceiverMessages", fields: [receiverId], references: [id])
+  sender       User     @relation("SenderMessages", fields: [senderId], references: [id])
+}
+
+model PetAppointment {
+  id           String           @id @default(uuid())
+  ownerId      String
+  vetId        String?
+  petName      String
+  animalType   String
+  type         String
+  category     String           @default("vet")
+  title        String?
+  isPublic     Boolean          @default(false)
+  date         DateTime
+  status       String           @default("scheduled")
+  notes        String?
+  meetingLink  String?
+  visitMode    String           @default("cabinet")
+  homeAddress  String?
+  reminderSent Boolean          @default(false)
+  price          Float?
+  endDate        DateTime?
+  paymentStatus  String           @default("unpaid")
+  paymentMethod  String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  owner        User             @relation(fields: [ownerId], references: [id])
+  vet          User?            @relation("VetAppointments", fields: [vetId], references: [id])
+  consultation VetConsultation?
+}
+
+model VetConsultation {
+  id              String         @id @default(uuid())
+  appointmentId   String         @unique
+  vetId           String
+  ownerId         String
+  petName         String
+  animalType      String
+  symptoms        String?
+  clinicalExam    String?
+  analysis        String?
+  diagnosis       String?
+  recommendations String?
+  status          String         @default("draft")
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  appointment     PetAppointment @relation(fields: [appointmentId], references: [id])
+  vet             User           @relation("VetConsultations", fields: [vetId], references: [id])
+  owner           User           @relation("OwnerConsultations", fields: [ownerId], references: [id])
+  prescriptions   Prescription[]
+}
+
+model Prescription {
+  id             String           @id @default(uuid())
+  consultationId String?
+  vetId          String
+  ownerId        String
+  petName        String
+  medications    String
+  instructions   String?
+  validUntil     DateTime?
+  status         String           @default("active")
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  consultation   VetConsultation? @relation(fields: [consultationId], references: [id])
+  vet            User             @relation("VetPrescriptions", fields: [vetId], references: [id])
+  owner          User             @relation("OwnerPrescriptions", fields: [ownerId], references: [id])
+}
+
+model PetVaccine {
+  id               String    @id @default(uuid())
+  ownerId          String
+  petName          String
+  animalType       String
+  vaccineType      String
+  dateAdministered DateTime  @default(now())
+  expiryDate       DateTime?
+  nextDue          DateTime?
+  batchNumber      String?
+  vetNotes         String?
+  status           String    @default("up_to_date")
+  reminderSent     Boolean   @default(false)
+  reminderAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  owner            User      @relation(fields: [ownerId], references: [id])
+}
+
+model VeterinaryRecord {
+  id          String    @id @default(uuid())
+  petName     String
+  animalType  String    @default("dog")
+  breed       String?
+  sex         String?
+  birthDate   DateTime?
+  identificationNumber String?
+  sterilized  Boolean?
+  allergies   String?
+  diet        String?
+  activityLevel String?
+  chronicDiseases String?
+  ownerId     String
+  petIndex    Int?
+  ownerName   String?
+  visitDate   DateTime  @default(now())
+  diagnosis   String
+  treatment   String?
+  vetNotes    String?
+  nextVisit   DateTime?
+  weight      Float?
+  temperature Float?
+  medications String?
+  status      String    @default("active")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  owner       User      @relation(fields: [ownerId], references: [id])
+}
+
+model VeterinaryContactRequest {
+  id            String    @id @default(uuid())
+  ownerId       String
+  animalType    String
+  petName       String?
+  subject       String
+  message       String
+  preferredDate DateTime?
+  visitMode     String    @default("cabinet")
+  homeAddress   String?
+  status        String    @default("pending")
+  createdAt     DateTime  @default(now())
+  owner         User      @relation(fields: [ownerId], references: [id])
+}
+
+/// Pharmacie partenaire du cabinet vétérinaire
+model Pharmacy {
+  id           String          @id @default(uuid())
+  name         String
+  address      String?
+  phone        String?
+  email        String?
+  isPartner    Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  medications  VetMedication[]
+  imports      PharmacyImport[]
+}
+
+/// Référentiel maladies (normalisation BI)
+model Disease {
+  id          String             @id @default(uuid())
+  name        String             @unique
+  animalTypes String             @default("dog,cat")
+  description String?
+  createdAt   DateTime           @default(now())
+  treatments  DiseaseTreatment[]
+}
+
+/// Catalogue médicaments vétérinaires (stock pharmacie)
+model VetMedication {
+  id           String             @id @default(uuid())
+  name         String
+  unit         String             @default("unité")
+  stockQty     Int                @default(0)
+  minStock     Int                @default(5)
+  price        Float?
+  pharmacyId   String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  pharmacy     Pharmacy?          @relation(fields: [pharmacyId], references: [id])
+  treatments   DiseaseTreatment[]
+
+  @@unique([name, pharmacyId])
+}
+
+/// Mapping maladie → traitement médical recommandé
+model DiseaseTreatment {
+  id              String        @id @default(uuid())
+  diseaseId       String
+  medicationId    String
+  defaultDosage   String?
+  defaultFrequency String?
+  defaultDuration String?
+  defaultQuantity Int           @default(1)
+  notes           String?
+  createdAt       DateTime      @default(now())
+  disease         Disease       @relation(fields: [diseaseId], references: [id], onDelete: Cascade)
+  medication      VetMedication @relation(fields: [medicationId], references: [id], onDelete: Cascade)
+
+  @@unique([diseaseId, medicationId])
+}
+
+/// Journal d'import pharmacie (médicaments manquants réapprovisionnés)
+model PharmacyImport {
+  id           String   @id @default(uuid())
+  pharmacyId   String
+  importedBy   String?
+  fileName     String?
+  itemsCount   Int      @default(0)
+  itemsJson    String?
+  status       String   @default("completed")
+  createdAt    DateTime @default(now())
+  pharmacy     Pharmacy @relation(fields: [pharmacyId], references: [id])
+}
+
+/// Congé ou arrêt maladie — vétérinaire / livreur, validation admin
+model LeaveRequest {
+  id          String    @id @default(uuid())
+  userId      String
+  staffRole   String
+  type        String
+  startDate   DateTime
+  endDate     DateTime
+  reason      String?
+  status      String    @default("pending")
+  adminNote   String?
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  user        User      @relation(fields: [userId], references: [id])
+}
+
+/// Dossier médical numérique — un par animal patient
+model PetMedicalDossier {
+  id                   String                @id @default(uuid())
+  dossierNumber        String                @unique
+  ownerId              String
+  petId                String?               @unique
+  petName              String
+  animalType           String                @default("dog")
+  breed                String?
+  sex                  String?
+  birthDate            DateTime?
+  identificationNumber String?
+  sterilized           Boolean?
+  allergies            String?
+  chronicDiseases      String?
+  diet                 String?
+  bloodType            String?
+  status               String                @default("active")
+  createdByVetId       String?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  owner                User                  @relation(fields: [ownerId], references: [id])
+  pet                  Pet?                  @relation(fields: [petId], references: [id])
+  creator              User?                 @relation("DossierCreator", fields: [createdByVetId], references: [id])
+  entries              MedicalDossierEntry[]
+
+  @@index([ownerId, petName])
+}
+
+/// Entrée du dossier (consultation, vaccin, examen…) avec signature numérique vétérinaire
+model MedicalDossierEntry {
+  id                 String            @id @default(uuid())
+  dossierId          String
+  vetId              String
+  entryType          String            @default("consultation")
+  title              String
+  symptoms           String?
+  clinicalExam       String?
+  diagnosis          String?
+  treatment          String?
+  medications        String?
+  recommendations    String?
+  weight             Float?
+  temperature        Float?
+  visitDate          DateTime          @default(now())
+  status             String            @default("draft")
+  isSigned           Boolean           @default(false)
+  signedAt           DateTime?
+  signedByVetId      String?
+  vetSignatureImage  String?
+  signatureHash      String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  dossier            PetMedicalDossier @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+  signer             User?             @relation("EntrySigner", fields: [signedByVetId], references: [id])
+
+  @@index([dossierId, visitDate])
+}

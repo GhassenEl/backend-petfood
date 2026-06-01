@@ -1,15 +1,12 @@
-const mongoose = require('mongoose');
-const Complaint = require('../models/Complaint');
+const { prisma, isDemoMode } = require('../prismaClient');
 const demoStore = require('../utils/demoStore');
 
-const isDemoMode = () => !mongoose.connection || mongoose.connection.readyState !== 1;
+const getUserId = (req) => req.user?.id || req.user?._id || req.user?.userId;
 
-// demo_ accounts should always use demoStore to avoid ObjectId cast errors
 const isDemoUser = (user) => {
-  const id = user?._id ?? user?.id;
+  const id = user?.id ?? user?._id;
   return typeof id === 'string' && id.startsWith('demo_');
 };
-
 
 const getMyComplaints = async (req, res) => {
   try {
@@ -17,7 +14,10 @@ const getMyComplaints = async (req, res) => {
       return res.json(demoStore.getComplaints(req.user));
     }
 
-    const complaints = await Complaint.find({ userId: req.user._id });
+    const complaints = await prisma.complaint.findMany({
+      where: { userId: getUserId(req) },
+      orderBy: { createdAt: 'desc' },
+    });
     res.json(complaints);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -33,14 +33,31 @@ const createComplaint = async (req, res) => {
       return res.status(201).json(demoStore.createComplaint(req.user, { subject, message, orderId }));
     }
 
-
-    const complaint = new Complaint({
-      userId: req.user._id,
-      subject,
-      message,
-      orderId
+    const complaint = await prisma.complaint.create({
+      data: {
+        userId: getUserId(req),
+        subject,
+        message,
+        orderId: orderId || null,
+        status: 'pending'
+      }
     });
-    await complaint.save();
+
+    try {
+      const { emitToRole } = require('../utils/notificationHub');
+      emitToRole('admin', {
+        id: `complaint-${complaint.id}`,
+        type: 'new_complaint',
+        title: `Réclamation : ${subject}`,
+        description: String(message || '').slice(0, 120),
+        link: '/admin/complaints',
+        read: false,
+        createdAt: complaint.createdAt,
+      });
+    } catch {
+      /* notification optional */
+    }
+
     res.status(201).json(complaint);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -53,7 +70,7 @@ const getComplaintCount = async (req, res) => {
       return res.json({ count: demoStore.getComplaints(req.user).length });
     }
 
-    const count = await Complaint.countDocuments();
+    const count = await prisma.complaint.count();
     res.json({ count });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -67,14 +84,20 @@ const createAdminComplaint = async (req, res) => {
       return res.status(201).json(demoStore.createComplaint({ _id: userId }, { subject, message, orderId }));
     }
 
-    const complaint = new Complaint({
-      userId,
-      subject,
-      message,
-      orderId: orderId || null,
+    const complaint = await prisma.complaint.create({
+      data: {
+        userId: userId || null,
+        subject,
+        message,
+        orderId: orderId || null,
+        status: 'pending'
+      }
     });
-    await complaint.save();
-    const populated = await complaint.populate('userId', 'name email');
+
+    const populated = await prisma.complaint.findUnique({
+      where: { id: complaint.id },
+      include: { user: { select: { id: true, name: true, email: true } } }
+    });
     res.status(201).json(populated);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -86,7 +109,10 @@ const getAllComplaints = async (req, res) => {
     if (isDemoMode()) {
       return res.json(demoStore.getComplaints(req.user));
     }
-    const complaints = await Complaint.find().populate('userId', 'name email');
+    const complaints = await prisma.complaint.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: { user: { select: { id: true, name: true, email: true } } },
+    });
     res.json(complaints);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -101,11 +127,22 @@ const updateComplaint = async (req, res) => {
       if (!complaint) return res.status(404).json({ error: 'Complaint not found' });
       return res.json(complaint);
     }
-    const complaint = await Complaint.findByIdAndUpdate(
-      req.params.id,
-      { response, status: status || 'resolved' },
-      { new: true }
-    );
+
+    const existing = await prisma.complaint.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Complaint not found' });
+
+    const data = {};
+    if (response !== undefined) data.response = response;
+    if (status !== undefined) data.status = status;
+    if (req.body.subject !== undefined) data.subject = req.body.subject;
+    if (req.body.message !== undefined) data.message = req.body.message;
+    if (req.body.orderId !== undefined) data.orderId = req.body.orderId || null;
+    if (req.body.userId !== undefined) data.userId = req.body.userId || null;
+
+    const complaint = await prisma.complaint.update({
+      where: { id: req.params.id },
+      data: Object.keys(data).length ? data : { status: 'resolved' },
+    });
     res.json(complaint);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -118,12 +155,14 @@ const deleteComplaint = async (req, res) => {
       const complaint = demoStore.deleteComplaint?.(req.params.id) || { message: 'Deleted' };
       return res.json(complaint);
     }
-    let complaint = await Complaint.findById(req.params.id);
+
+    const complaint = await prisma.complaint.findUnique({ where: { id: req.params.id } });
     if (!complaint) return res.status(404).json({ error: 'Complaint not found' });
-    if (req.user._id.toString() !== complaint.userId.toString()) {
+    if (req.user.role !== 'admin' && getUserId(req) !== complaint.userId) {
       return res.status(403).json({ error: 'Not authorized' });
     }
-    await Complaint.findByIdAndDelete(req.params.id);
+
+    await prisma.complaint.delete({ where: { id: req.params.id } });
     res.json({ message: 'Complaint deleted' });
   } catch (error) {
     res.status(500).json({ error: error.message });

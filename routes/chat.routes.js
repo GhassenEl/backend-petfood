@@ -2,6 +2,7 @@ const express = require('express');
 const { auth } = require('../middleware/auth');
 const {
   sendMessage,
+  sendPetMessage,
   getHistory,
   clearHistory
 } = require('../controllers/chat.controller');
@@ -9,6 +10,7 @@ const {
 const router = express.Router();
 
 router.post('/message', auth, sendMessage);
+router.post('/pet', auth, sendPetMessage);
 router.get('/history', auth, getHistory);
 router.delete('/history', auth, clearHistory);
 

@@ -97,9 +97,11 @@ const tunisAddresses = [
   { address: '11 Avenue de la Liberte, Tunis 1000', phone: '+216 55 999 333', lat: 36.8000, lng: 10.1800 },
 ];
 
-const paymentMethods = ['cash', 'card', 'check', 'transfer'];
+const paymentMethods = ['cash', 'card', 'stripe', 'paypal', 'check', 'transfer', 'pro_card'];
 const statuses = ['pending', 'shipped', 'delivered', 'cancelled', 'paid'];
 const statusWeights = [0.35, 0.25, 0.25, 0.05, 0.10]; // 35% pending, 25% shipped, etc.
+
+const { resolveRegionFromAddress } = require('./regions');
 
 function weightedRandom(items, weights) {
   const total = weights.reduce((a, b) => a + b, 0);
@@ -173,6 +175,7 @@ function generateOrders(count = 25) {
       paymentMethod: paymentMethods[randomInt(0, paymentMethods.length - 1)],
       address: addrInfo.address,
       phone: addrInfo.phone,
+      region: resolveRegionFromAddress(addrInfo.address),
       deliveryLocation: {
         lat: addrInfo.lat + (Math.random() - 0.5) * 0.005,
         lng: addrInfo.lng + (Math.random() - 0.5) * 0.005,
@@ -247,11 +250,240 @@ function generateMessages() {
   ];
 }
 
+function randomFrom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+const animalTypes = ['dog', 'cat', 'bird', 'fish', 'rabbit', 'other'];
+
+const veterinarySubjects = [
+  'Contrôle digestion & selles',
+  'Changement de croquettes',
+  'Perte d’appétit',
+  'Démangeaisons & peau sensible',
+  'Manque d’énergie',
+  'Problèmes urinaires',
+  'Vomissements récents',
+  'Ballonnements après repas',
+  'Suivi vaccination / vermifuge',
+  'Examen léger avant transition alimentaire',
+];
+
+const veterinaryDiagnoses = [
+  'Gastro-entérite légère',
+  'Intolérance à la transition',
+  'Inflammation digestive modérée',
+  'Troubles cutanés (allergie suspectée)',
+  'Hydratation insuffisante',
+  'Parasites digestifs suspectés',
+  'Stress alimentaire (changement récent)',
+  'Début de convalescence',
+  'Baisse d’appétit (suspect digestif)',
+  'Recommandation alimentation plus digeste',
+];
+
+const veterinaryTreatments = [
+  'Hydratation + diète 24-48h, puis transition progressive.',
+  'Retour à l’aliment stable + transition plus lente.',
+  'Régime digestif + suivi des selles 5-7 jours.',
+  'Compléments (probiotiques) + surveillance appétit.',
+  'Plan de vermifugation + check selles.',
+  'Adaptation dose et fractionnement repas.',
+  'Routine peau: shampoing doux + suivi démangeaisons.',
+  'Contrôle hydratation et activité, puis ajustement croquettes.',
+  'Recommandation examens si symptômes persistent > 48h.',
+];
+
+const vetNotePhrases = [
+  'Surveiller l’appétit et l’hydratation.',
+  'Revoir si symptômes persistent > 48h.',
+  'Noter fréquence/texture des selles.',
+  'Vérifier zones sensibles et douleur à la palpation.',
+  'Adapter l’alimentation en diminuant la fraction au repas suivant.',
+];
+
+const petNamePool = [
+  'Rex', 'Mimi', 'Luna', 'Nina', 'Oscar', 'Bella', 'Sultan', 'Léo', 'Charly', 'Kira',
+  'Moka', 'Atlas', 'Noa', 'Lola', 'Sam', 'Zara', 'Toby', 'Yuki', 'Milo', 'Pumba',
+];
+
+const createVeterinaryContactRequests = ({ ownerId, count }) => {
+  const reqs = [];
+
+  for (let i = 0; i < count; i++) {
+    const animalType = randomFrom(animalTypes);
+    const petName = randomFrom(petNamePool);
+    const subject = randomFrom(veterinarySubjects);
+
+    const message = [
+      `Bonjour, je viens pour ${subject.toLowerCase()}.`,
+      `Mon animal est ${animalType === 'other' ? 'général' : animalType}.`,
+      `Depuis ${randomInt(1, 6)} jours, on observe une évolution avec quelques épisodes.`,
+      randomFrom(vetNotePhrases),
+      'Nous souhaitons un avis pour adapter l’alimentation et le suivi.',
+    ].join(' ');
+
+    reqs.push({
+      ownerId,
+      animalType,
+      petName,
+      subject,
+      message,
+      preferredDate: new Date(Date.now() + randomInt(0, 14) * 24 * 60 * 60 * 1000).toISOString(),
+      status: 'pending',
+      createdAt: new Date(Date.now() - randomInt(0, 21) * 24 * 60 * 60 * 1000).toISOString(),
+    });
+  }
+
+  return reqs;
+};
+
+const createVeterinaryRecords = ({ ownerId, count }) => {
+  const records = [];
+
+  for (let i = 0; i < count; i++) {
+    const animalType = randomFrom(animalTypes);
+    const petName = randomFrom(petNamePool);
+    const diagnosis = randomFrom(veterinaryDiagnoses);
+    const treatment = randomFrom(veterinaryTreatments);
+
+    const weight = animalType === 'dog' ? Number((randomInt(8, 28) + Math.random()).toFixed(1)) :
+      animalType === 'cat' ? Number((randomInt(2, 7) + Math.random()).toFixed(1)) :
+      animalType === 'rabbit' ? Number((randomInt(1, 4) + Math.random()).toFixed(1)) :
+      animalType === 'bird' ? Number((randomInt(0, 1) + Math.random() * 0.4).toFixed(2)) :
+      animalType === 'fish' ? Number((randomInt(0, 2) + Math.random()).toFixed(1)) :
+      Number((randomInt(2, 20) + Math.random()).toFixed(1));
+
+    const temperature = Number((randomInt(37, 40) + Math.random()).toFixed(1));
+
+    const nextVisit = Math.random() < 0.8
+      ? new Date(Date.now() + randomInt(3, 30) * 24 * 60 * 60 * 1000).toISOString()
+      : null;
+
+    const medications = JSON.stringify([
+      {
+        name: randomFrom(['Probiotiques', 'Support digestion', 'Complément fibres', 'Ajustement dose', 'Solution hydratation']),
+        dosage: randomFrom(['1 gélule', '1 dose', '1 seringue', '2 ml', '1 comprimé']),
+        frequency: randomFrom(['1x/j', '2x/j', '1 jour sur 2', '3x/j']),
+        duration: randomFrom(['7 jours', '10 jours', '14 jours', '21 jours']),
+        quantity: randomInt(7, 28),
+      },
+    ]);
+
+    records.push({
+      ownerId,
+      petName,
+      animalType,
+      visitDate: new Date(Date.now() - randomInt(0, 90) * 24 * 60 * 60 * 1000).toISOString(),
+      diagnosis,
+      treatment,
+      vetNotes: `${randomFrom(vetNotePhrases)} ${Math.random() < 0.5 ? 'Objectif: observation des selles et de l’énergie.' : 'Prévoir contrôle si aggravation.'}`,
+      nextVisit: nextVisit ? nextVisit : undefined,
+      weight,
+      temperature,
+      medications,
+      status: randomFrom(['active', 'active', 'completed']),
+    });
+  }
+
+  // tri par date desc (comme la plupart des écrans)
+  return records.sort((a, b) => new Date(b.visitDate) - new Date(a.visitDate));
+};
+
+const vaccineTypesByAnimal = {
+  dog: ['Rage', 'Parvovirose', 'Hépatite', 'Leptospirose', 'Toux du chenil'],
+  cat: ['Rage', 'Coryza', 'Leucose', 'Chlamydiose', 'Typhus'],
+  bird: ['Paramyxovirose', 'Polyomavirus', 'Salmonellose'],
+  rabbit: ['Myxomatose', 'VHD', 'Pasteurellose'],
+  fish: ['Vaccin préventif aquarium'],
+  other: ['Rage', 'Contrôle annuel'],
+};
+
+const createPetVaccines = ({ ownerId, count }) => {
+  const vaccines = [];
+
+  for (let i = 0; i < count; i++) {
+    const animalType = randomFrom(animalTypes);
+    const petName = randomFrom(petNamePool);
+    const options = vaccineTypesByAnimal[animalType] || vaccineTypesByAnimal.other;
+    const vaccineType = randomFrom(options);
+    const daysAgo = randomInt(30, 720);
+    const dateAdministered = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
+    const nextDue = new Date(dateAdministered);
+    nextDue.setMonth(nextDue.getMonth() + randomFrom([6, 12, 12, 24]));
+    const isOverdue = nextDue < new Date();
+
+    vaccines.push({
+      ownerId,
+      petName,
+      animalType,
+      vaccineType,
+      dateAdministered,
+      expiryDate: new Date(dateAdministered.getTime() + 365 * 24 * 60 * 60 * 1000),
+      nextDue,
+      batchNumber: `B${randomInt(10000, 99999)}`,
+      vetNotes: randomFrom(vetNotePhrases),
+      status: isOverdue ? 'due_soon' : 'up_to_date',
+    });
+  }
+
+  return vaccines.sort((a, b) => b.dateAdministered - a.dateAdministered);
+};
+
+const createPetAppointments = ({ ownerId, count }) => {
+  const appts = [];
+  const notes = [
+    'Contrôle digestion + suivi alimentation.',
+    'Transition croquettes + observation selles.',
+    'Check hydratation, appétit et énergie.',
+    'Suivi démangeaisons / peau sensible.',
+    'Première consultation et plan de suivi.',
+  ];
+
+  for (let i = 0; i < count; i++) {
+    const animalType = randomFrom(animalTypes);
+    const petName = randomFrom(petNamePool);
+
+    const type = 'veterinary_consultation';
+    const isFuture = Math.random() < 0.55; // ~55% futurs
+    const dayOffset = isFuture ? randomInt(0, 25) : -randomInt(1, 25);
+
+    const hour = randomInt(9, 17);
+    const minutes = randomInt(0, 59);
+
+    const date = new Date();
+    date.setDate(date.getDate() + dayOffset);
+    date.setHours(hour, minutes, 0, 0);
+
+    appts.push({
+      ownerId,
+      petName,
+      animalType,
+      type,
+      date: date.toISOString(),
+      status: isFuture ? randomFrom(['scheduled', 'scheduled', 'confirmed']) : randomFrom(['confirmed', 'completed']),
+      notes: randomFrom(notes),
+      reminderSent: isFuture ? Math.random() < 0.45 : true,
+      createdAt: date.toISOString(),
+      updatedAt: date.toISOString(),
+    });
+  }
+
+  return appts;
+};
+
 module.exports = {
   generateOrders,
   generateMessages,
   demoProducts,
   demoClient,
   tunisAddresses,
+  createVeterinaryContactRequests,
+  createVeterinaryRecords,
+  createPetAppointments,
+  createPetVaccines,
 };
+
+
+
 

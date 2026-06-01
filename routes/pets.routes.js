@@ -18,12 +18,13 @@ const router = express.Router();
 // Pets
 router.get('/', auth, getUserPets);
 router.post('/', auth, addPet);
-router.put('/:petIndex', auth, updatePet);
-router.delete('/:petIndex', auth, deletePet);
+router.put('/:petId', auth, updatePet);
+router.delete('/:petId', auth, deletePet);
 
 // Vaccines
 router.get('/vaccines', auth, getVaccines);
 router.post('/vaccines', auth, createVaccine);
+router.get('/vaccine-reminders', auth, require('../controllers/vaccineReminder.controller').getReminders);
 
 // Appointments
 router.get('/appointments', auth, getAppointments);

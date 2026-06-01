@@ -1,15 +1,15 @@
-const mongoose = require('mongoose');
-const Review = require('../models/Review');
+const { prisma, isDemoMode } = require('../prismaClient');
 const demoStore = require('../utils/demoStore');
 
-const isDemoMode = () => !mongoose.connection || mongoose.connection.readyState !== 1;
+const getUserId = (req) => req.user?.id || req.user?._id || req.user?.userId;
+
 
 const getCount = async (req, res) => {
   try {
     if (isDemoMode()) {
       return res.json({ count: demoStore.getReviews(req.user).length });
     }
-    const count = await Review.countDocuments();
+    const count = await prisma.review.count();
     res.json({ count });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -22,18 +22,17 @@ const getReviews = async (req, res) => {
       return res.json(demoStore.getReviews(req.user));
     }
 
-    if (req.user.role !== 'admin') {
-      const reviews = await Review.find({ userId: req.user._id })
-        .populate('userId', 'email name')
-        .populate('productId', 'name imageUrl')
-        .sort({ createdAt: -1 });
-      return res.json(reviews);
-    }
+    const where = req.user.role !== 'admin' ? { userId: getUserId(req) } : undefined;
 
-    const reviews = await Review.find()
-      .populate('userId', 'email name')
-      .populate('productId', 'name imageUrl')
-      .sort({ createdAt: -1 });
+    const reviews = await prisma.review.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: { select: { id: true, email: true, name: true } },
+        product: { select: { id: true, name: true, imageUrl: true } }
+      }
+    });
+
     res.json(reviews);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -46,19 +45,80 @@ const createReview = async (req, res) => {
       return res.status(201).json(demoStore.createReview(req.user, req.body));
     }
 
-    const review = new Review({
-      userId: req.user._id,
-      productId: req.body.productId,
-      rating: req.body.rating,
-      comment: req.body.comment,
-      emotion: req.body.emotion || 'neutral',
-      aiSuggested: req.body.aiSuggested || false,
+    const isEventReview = String(req.body?.type || '').toLowerCase() === 'event';
+    const rawProductId = req.body?.productId;
+    if (!rawProductId) {
+      return res.status(400).json({ error: 'productId is required' });
+    }
+
+    // The Prisma schema currently links Review.productId -> Product.id.
+    // For EventsPage, we send the appointment id in productId with type='event'.
+    // We map that appointment id to a dedicated “event reviews” Product.
+    let mappedProductId = rawProductId;
+
+    if (isEventReview) {
+      // Create deterministic product id so reviews can be stored without FK issues.
+      // Note: we don't require the appointment to exist.
+      const eventProductId = `event_reviews_${rawProductId}`;
+
+      const [existingProduct] = await prisma.product.findMany({
+        where: { id: eventProductId },
+        take: 1,
+      });
+
+      if (!existingProduct) {
+        await prisma.product.create({
+          data: {
+            id: eventProductId,
+            name: `Event Reviews #${rawProductId}`,
+            price: 0,
+            discount: 0,
+            imageUrl: '',
+            category: 'services',
+            animalType: 'other',
+            popularity: 0,
+            rating_avg: 0,
+            rating_count: 0,
+            stock: 999999,
+            tags: ['event'],
+            stockHistory: [],
+          },
+        });
+      }
+
+      mappedProductId = eventProductId;
+    }
+
+    const review = await prisma.review.create({
+      data: {
+        userId: req.user.role === 'admin' && req.body.userId ? req.body.userId : getUserId(req),
+        productId: mappedProductId,
+        rating: Number(req.body.rating),
+        comment: req.body.comment,
+        emotion: req.body.emotion || 'neutral',
+        aiSuggested: req.body.aiSuggested || false
+      },
+      include: {
+        user: { select: { id: true, email: true, name: true } },
+        product: { select: { id: true, name: true, imageUrl: true } }
+      }
     });
-    await review.save();
-    await review.populate([
-      { path: 'userId', select: 'email name' },
-      { path: 'productId', select: 'name imageUrl' },
-    ]);
+
+    try {
+      const { emitToRole } = require('../utils/notificationHub');
+      emitToRole('admin', {
+        id: `review-${review.id}`,
+        type: 'new_review',
+        title: `Nouvel avis (${review.rating}⭐)`,
+        description: String(review.comment || '').slice(0, 120),
+        link: '/admin/reviews',
+        read: false,
+        createdAt: review.createdAt,
+      });
+    } catch {
+      /* optional */
+    }
+
     res.status(201).json(review);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -72,12 +132,27 @@ const updateReview = async (req, res) => {
       if (!review) return res.status(404).json({ error: 'Review not found' });
       return res.json(review);
     }
-    const review = await Review.findByIdAndUpdate(
-      req.params.id,
-      { rating: req.body.rating, comment: req.body.comment, emotion: req.body.emotion || 'neutral', aiSuggested: req.body.aiSuggested || false },
-      { new: true }
-    ).populate('userId', 'email name').populate('productId', 'name imageUrl');
-    if (!review) return res.status(404).json({ error: 'Review not found' });
+
+    const existing = await prisma.review.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Review not found' });
+    if (existing.userId !== getUserId(req) && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    const review = await prisma.review.update({
+      where: { id: req.params.id },
+      data: {
+        rating: req.body.rating !== undefined ? Number(req.body.rating) : existing.rating,
+        comment: req.body.comment !== undefined ? req.body.comment : existing.comment,
+        emotion: req.body.emotion !== undefined ? req.body.emotion : existing.emotion,
+        aiSuggested: req.body.aiSuggested !== undefined ? req.body.aiSuggested : existing.aiSuggested
+      },
+      include: {
+        user: { select: { id: true, email: true, name: true } },
+        product: { select: { id: true, name: true, imageUrl: true } }
+      }
+    });
+
     res.json(review);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -91,13 +166,14 @@ const deleteReview = async (req, res) => {
       if (!review) return res.status(404).json({ error: 'Review not found' });
       return res.json({ message: 'Review deleted' });
     }
-    let review = await Review.findById(req.params.id);
-    if (!review) return res.status(404).json({ error: 'Review not found' });
-    if (req.user.role !== 'admin' && req.user._id.toString() !== review.userId.toString()) {
+
+    const existing = await prisma.review.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Review not found' });
+    if (existing.userId !== getUserId(req) && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Not authorized' });
     }
-    review = await Review.findByIdAndDelete(req.params.id);
-    if (!review) return res.status(404).json({ error: 'Review not found' });
+
+    await prisma.review.delete({ where: { id: req.params.id } });
     res.json({ message: 'Review deleted' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -113,9 +189,9 @@ const getEmotionAnalytics = async (req, res) => {
       return res.json({ productId: req.params.productId, emotions, total: allReviews.length });
     }
 
-    const reviews = await Review.find({ productId: req.params.productId });
+    const reviews = await prisma.review.findMany({ where: { productId: req.params.productId } });
     const emotions = { happy: 0, satisfied: 0, neutral: 0, disappointed: 0, frustrated: 0 };
-    reviews.forEach(r => { emotions[r.emotion] = (emotions[r.emotion] || 0) + 1; });
+    reviews.forEach(r => { emotions[r.emotion || 'neutral'] = (emotions[r.emotion || 'neutral'] || 0) + 1; });
     res.json({ productId: req.params.productId, emotions, total: reviews.length });
   } catch (error) {
     res.status(500).json({ error: error.message });
