@@ -14,7 +14,8 @@
     "dev:microservices": "node scripts/start-microservices.js",
     "seed": "node seed.js",
     "seed:missing": "node scripts/seed-missing.js",
-    "seed:platform": "node scripts/seed-missing.js"
+    "seed:platform": "node scripts/seed-missing.js",
+    "test:api": "node scripts/test-wallet-api.js"
   },
   "dependencies": {
     "@prisma/client": "^5.14.1",
