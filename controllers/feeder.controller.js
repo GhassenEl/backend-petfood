@@ -10,6 +10,22 @@ const {
   shouldLogLowFoodAlert,
   shouldLogSensorSnapshot,
 } = require('../services/feederAnalytics.service');
+const {
+  saveFeederGrandeurs,
+  getLatestGrandeurs,
+  getHistoryGrandeurs,
+  getFirebaseStatus,
+  isEnabled: isFirebaseEnabled,
+} = require('../services/feederFirebase.service');
+
+const syncGrandeursToFirebase = async (feeder, fields) => {
+  if (!isFirebaseEnabled()) return;
+  await saveFeederGrandeurs({
+    feederId: feeder.id,
+    ownerId: feeder.ownerId,
+    ...fields,
+  });
+};
 
 const resolveOwnerIds = async (user) => {
   const ids = new Set([String(user.id || user._id)]);
@@ -41,6 +57,7 @@ const formatFeeder = (f) => {
     offlineMinutes: f.lastSeenAt
       ? Math.round((Date.now() - new Date(f.lastSeenAt).getTime()) / 60000)
       : null,
+    firebaseEnabled: isFirebaseEnabled(),
   };
 };
 
@@ -187,6 +204,7 @@ const markRefill = async (req, res) => {
       where: { id: feeder.id },
       data: { isLowFood: false, reservoirCm: 5 },
     });
+    const updated = await prisma.petFeeder.findUnique({ where: { id: feeder.id } });
     await prisma.feederLog.create({
       data: {
         feederId: feeder.id,
@@ -196,6 +214,15 @@ const markRefill = async (req, res) => {
           ? `Réservoir rechargé (~${grams} g ajoutés)`
           : 'Réservoir rechargé manuellement',
       },
+    });
+    await syncGrandeursToFirebase(updated || feeder, {
+      eventType: 'refill',
+      source: 'client',
+      foodGrams: grams ?? updated?.foodGrams,
+      reservoirCm: updated?.reservoirCm,
+      isLowFood: false,
+      status: updated?.status || 'online',
+      message: 'Recharge réservoir (app client)',
     });
     res.json({ success: true });
   } catch (error) {
@@ -318,6 +345,14 @@ const manualDispense = async (req, res) => {
       },
     });
 
+    await syncGrandeursToFirebase(feeder, {
+      eventType: 'manual_request',
+      source: 'client',
+      portionGrams: grams,
+      status: feeder.status || 'online',
+      message: `Distribution manuelle ${grams} g`,
+    });
+
     res.json({ success: true, command });
   } catch (error) {
     res.status(500).json({ error: 'Commande distribution échouée' });
@@ -436,6 +471,19 @@ const deviceHeartbeat = async (req, res) => {
       });
     }
 
+    await syncGrandeursToFirebase(feeder, {
+      eventType: 'sensor',
+      source: 'esp32',
+      temperature: sensorPayload.temperature,
+      humidity: sensorPayload.humidity,
+      foodGrams: sensorPayload.foodGrams,
+      reservoirCm: sensorPayload.reservoirCm,
+      animalPresent: sensorPayload.animalPresent,
+      isLowFood: low,
+      status: 'online',
+      message: 'Relevé capteurs ESP32',
+    });
+
     if (low && (await shouldLogLowFoodAlert(feeder.id))) {
       await prisma.feederLog.create({
         data: {
@@ -505,6 +553,17 @@ const deviceAckCommand = async (req, res) => {
       },
     });
 
+    await syncGrandeursToFirebase(feeder, {
+      eventType: success === false ? 'dispense_failed' : 'dispense',
+      source: 'esp32',
+      portionGrams,
+      foodGrams,
+      reservoirCm,
+      animalPresent: animalDetected,
+      status: 'online',
+      message: message || 'Distribution',
+    });
+
     res.json({ ok: true, commandId });
   } catch (error) {
     res.status(500).json({ error: 'Accusé commande échoué' });
@@ -527,10 +586,64 @@ const deviceEvent = async (req, res) => {
         message: message || null,
       },
     });
+
+    await syncGrandeursToFirebase(req.feeder, {
+      eventType: eventType || 'sensor',
+      source: 'esp32',
+      temperature,
+      humidity,
+      reservoirCm,
+      foodGrams,
+      portionGrams,
+      animalPresent: animalDetected,
+      status: 'online',
+      message,
+    });
+
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ error: 'Événement non enregistré' });
   }
+};
+
+const getFirebaseLatest = async (req, res) => {
+  try {
+    const ownerIds = await resolveOwnerIds(req.user);
+    const feeder = await prisma.petFeeder.findFirst({
+      where: { id: req.params.id, ownerId: { in: ownerIds } },
+    });
+    if (!feeder) return res.status(404).json({ error: 'Distributeur introuvable' });
+
+    const latest = await getLatestGrandeurs(feeder.id);
+    res.json({
+      firebaseEnabled: isFirebaseEnabled(),
+      latest,
+      grandeurs: latest?.grandeurs || null,
+      recordedAt: latest?.recordedAt || null,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Lecture Firebase impossible' });
+  }
+};
+
+const getFirebaseHistory = async (req, res) => {
+  try {
+    const ownerIds = await resolveOwnerIds(req.user);
+    const feeder = await prisma.petFeeder.findFirst({
+      where: { id: req.params.id, ownerId: { in: ownerIds } },
+    });
+    if (!feeder) return res.status(404).json({ error: 'Distributeur introuvable' });
+
+    const limit = Math.min(Number(req.query.limit || 40), 100);
+    const history = await getHistoryGrandeurs(feeder.id, limit);
+    res.json({ firebaseEnabled: isFirebaseEnabled(), history });
+  } catch (error) {
+    res.status(500).json({ error: 'Historique Firebase indisponible' });
+  }
+};
+
+const getFirebaseConfig = async (req, res) => {
+  res.json(getFirebaseStatus());
 };
 
 module.exports = {
@@ -549,6 +662,9 @@ module.exports = {
   getAlerts,
   getInsights,
   getHistory,
+  getFirebaseLatest,
+  getFirebaseHistory,
+  getFirebaseConfig,
   deviceHeartbeat,
   devicePollCommands,
   deviceAckCommand,

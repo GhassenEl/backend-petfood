@@ -17,6 +17,9 @@ const {
   getAlerts,
   getInsights,
   getHistory,
+  getFirebaseLatest,
+  getFirebaseHistory,
+  getFirebaseConfig,
   deviceHeartbeat,
   devicePollCommands,
   deviceAckCommand,
@@ -32,8 +35,11 @@ router.post('/device/ack', feederDeviceAuth, deviceAckCommand);
 router.post('/device/event', feederDeviceAuth, deviceEvent);
 
 // Application web — JWT
+router.get('/firebase/status', auth, getFirebaseConfig);
 router.get('/', auth, getMyFeeders);
 router.post('/', auth, registerFeeder);
+router.get('/:id/firebase/latest', auth, getFirebaseLatest);
+router.get('/:id/firebase/history', auth, getFirebaseHistory);
 router.get('/:id', auth, getFeeder);
 router.put('/:id', auth, updateFeeder);
 router.get('/:id/nutrition-plan', auth, getNutritionPlan);
