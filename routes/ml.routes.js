@@ -9,6 +9,7 @@ const {
   getClientAgentPack,
   getAdminOrdersRisk,
   getAdminPack,
+  getAdminAgentPack,
   getLivreurPack,
   getLivreurOrdersRisk,
   getVetPack,
@@ -22,6 +23,7 @@ router.get('/admin/orders-risk', auth, adminAuth, getAdminOrdersRisk);
 router.get('/client/pack', auth, getClientPack);
 router.get('/client/agent', auth, getClientAgentPack);
 router.get('/admin/pack', auth, adminAuth, getAdminPack);
+router.get('/admin/agent', auth, adminAuth, getAdminAgentPack);
 router.get('/livreur/pack', auth, livreurAuth, getLivreurPack);
 router.get('/livreur/orders-risk', auth, livreurAuth, getLivreurOrdersRisk);
 router.get('/vet/pack', auth, vetAuth, getVetPack);

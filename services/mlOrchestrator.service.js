@@ -8,7 +8,7 @@ const { getPlatformInsights, rankSeniorDogProducts, getOrderCancelRisk } = requi
 
 const { exportMlSnapshot } = require('./mlDataExport.service');
 
-const { getPersonalizedRecommendations } = require('./aiRecommendationAgent.service');
+const { getPersonalizedRecommendations, getTopProductsReport } = require('./aiRecommendationAgent.service');
 
 const { getPetRecommendations } = require('./petRecommendation.service');
 
@@ -288,50 +288,6 @@ const getClientMlAgentPack = async (user) => {
   };
 };
 
-const getAdminMlPack = async () => {
-
-  const [insights, riskMap, mlHealth] = await Promise.all([
-
-    getPlatformInsights().catch(() => ({})),
-
-    getAdminOrdersRiskMap().catch(() => ({ list: [], risks: {} })),
-
-    checkPythonMlHealth().catch(() => ({ ok: false })),
-
-  ]);
-
-
-
-  const churn = insights.churnPredictions || [];
-
-  return {
-
-    role: 'admin',
-
-    pythonPowered: Boolean(insights.pythonPowered || mlHealth?.ok),
-
-    models: insights.pythonPowered || mlHealth?.ok
-      ? ['xgboost', 'churn', 'cancel_risk', 'demand_forecast']
-      : ['rules_scoring'],
-
-    nextMonthRevenue: insights.nextMonthRevenue,
-
-    productDemand: insights.productDemand?.slice(0, 10) || [],
-
-    churnHighRisk: churn.filter((c) => (c.rebuyProbability ?? 1) < 0.45).slice(0, 8),
-
-    cancelRisks: riskMap.list?.slice(0, 10) || [],
-
-    anomalies: insights.anomalyDetection,
-
-    fraudSignals: insights.fraudDetection?.slice?.(0, 5) || insights.fraudDetection || [],
-
-  };
-
-};
-
-
-
 const normalizeCancelRisk = (r) => {
   const cancelRisk = Number(r.cancelRisk ?? r.cancelProbability ?? 0.2);
   return {
@@ -341,6 +297,130 @@ const normalizeCancelRisk = (r) => {
     model: r.model || 'rules',
     riskLabel: cancelRisk >= 0.45 ? 'élevé' : cancelRisk >= 0.3 ? 'moyen' : 'faible',
   };
+};
+
+const getAdminMlAgentPack = async () => {
+  const [insights, riskMap, mlHealth, topReport, snapshot] = await Promise.all([
+    getPlatformInsights().catch(() => ({})),
+    getAdminOrdersRiskMap().catch(() => ({ list: [], risks: {}, pythonPowered: false })),
+    checkPythonMlHealth().catch(() => ({ ok: false })),
+    getTopProductsReport({ limit: 10 }).catch(() => null),
+    exportMlSnapshot().catch(() => ({ orders: [], products: [], users: [], pets: [] })),
+  ]);
+
+  const orders = snapshot.orders || [];
+  const products = snapshot.products || [];
+  const users = snapshot.users || [];
+  const churn = insights.churnPredictions || [];
+  const churnHighRisk = churn
+    .filter((c) => (c.rebuyProbability ?? 1) < 0.45)
+    .slice(0, 12);
+
+  const cancelList = (riskMap.list || [])
+    .map((r) => normalizeCancelRisk(r))
+    .sort((a, b) => b.cancelRisk - a.cancelRisk)
+    .slice(0, 15);
+
+  const pendingOrders = orders.filter((o) =>
+    ['pending', 'processing', 'paid'].includes(String(o.status || '').toLowerCase())
+  ).length;
+
+  const lowStockProducts = products
+    .filter((p) => Number(p.stock ?? 0) < 10)
+    .slice(0, 10)
+    .map((p) => ({ id: p.id, name: p.name, stock: p.stock, category: p.category }));
+
+  const rev = insights.nextMonthRevenue || {};
+  const forecastRevenue = Number(rev.forecastRevenue ?? rev.predicted ?? 0);
+
+  const actionHints = [];
+  if (cancelList.length) {
+    actionHints.push({
+      type: 'cancel_risk',
+      label: `${cancelList.length} commande(s) à risque d'annulation`,
+      link: '/admin/orders',
+    });
+  }
+  if (churnHighRisk.length) {
+    actionHints.push({
+      type: 'churn',
+      label: `${churnHighRisk.length} client(s) à risque churn`,
+      link: '/admin/users',
+    });
+  }
+  if (lowStockProducts.length) {
+    actionHints.push({
+      type: 'stock',
+      label: `${lowStockProducts.length} produit(s) en stock faible`,
+      link: '/admin/products',
+    });
+  }
+  actionHints.push({
+    type: 'dashboard',
+    label: 'Tableau de bord et historique',
+    link: '/admin/dashboard',
+  });
+
+  const ruleSummary = [
+    forecastRevenue
+      ? `CA prévu mois prochain : ${Math.round(forecastRevenue).toLocaleString('fr-FR')} DT.`
+      : '',
+    `${pendingOrders} commande(s) en cours de traitement.`,
+    cancelList.length ? `${cancelList.length} livraison(s) sensibles à l'annulation.` : '',
+    churnHighRisk.length ? `${churnHighRisk.length} client(s) à relancer.` : '',
+    topReport?.topProducts?.[0] ? `Meilleure vente : ${topReport.topProducts[0].name}.` : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  return {
+    role: 'admin',
+    agent: 'admin_ml_agent',
+    pythonPowered: Boolean(insights.pythonPowered || mlHealth?.ok || riskMap.pythonPowered),
+    groqPowered: Boolean(topReport?.aiPowered),
+    models: [
+      insights.pythonPowered || mlHealth?.ok ? 'xgboost' : null,
+      topReport?.aiPowered ? 'groq' : null,
+      'churn_classifier',
+      'cancel_risk',
+      'demand_forecast',
+      'anomaly_detection',
+    ].filter(Boolean),
+    summary: topReport?.summary || ruleSummary,
+    tip: insights.pythonPowered
+      ? 'XGBoost + Groq actifs — surveillez les alertes rouges ci-dessous'
+      : 'Lancez le service ML Python (port 8000) pour activer XGBoost',
+    nextMonthRevenue: rev,
+    productDemand: insights.productDemand?.slice(0, 12) || [],
+    churnPredictions: churn.slice(0, 12),
+    churnHighRisk,
+    cancelRisks: cancelList,
+    cancelRiskOrders: insights.cancelRiskOrders || cancelList,
+    ordersRisk: riskMap.risks || {},
+    anomalies: insights.anomalyDetection,
+    fraudSignals: insights.fraudDetection?.slice?.(0, 8) || insights.fraudDetection || [],
+    seniorDogRanking: insights.seniorDogRanking,
+    topProducts: topReport?.topProducts || [],
+    topProductsInsights: topReport?.insights || null,
+    platformKpis: {
+      totalOrders: orders.length,
+      pendingOrders,
+      clients: users.filter((u) => u.role === 'client').length,
+      livreurs: users.filter((u) => u.role === 'livreur').length,
+      products: products.length,
+      pets: (snapshot.pets || []).length,
+      adoptionListings: products.filter((p) => p.category === 'animaux').length,
+    },
+    lowStockProducts,
+    actionHints,
+    platformInsights: insights,
+  };
+};
+
+const getAdminMlPack = async () => {
+  const pack = await getAdminMlAgentPack();
+  const { platformInsights, topProductsInsights, ...lite } = pack;
+  return lite;
 };
 
 const getLivreurOrdersRiskMap = async (user) => {
@@ -549,6 +629,8 @@ module.exports = {
   getClientMlAgentPack,
 
   getAdminMlPack,
+
+  getAdminMlAgentPack,
 
   getLivreurMlPack,
 

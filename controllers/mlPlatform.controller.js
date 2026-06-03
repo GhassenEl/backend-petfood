@@ -7,6 +7,7 @@ const {
   getClientAiPack,
   getClientMlAgentPack,
   getAdminMlPack,
+  getAdminMlAgentPack,
   getLivreurMlPack,
   getLivreurOrdersRiskMap,
   getVetMlPack,
@@ -136,6 +137,15 @@ const getAdminPack = async (req, res) => {
   }
 };
 
+const getAdminAgentPack = async (req, res) => {
+  try {
+    const pack = await getAdminMlAgentPack();
+    res.json(pack);
+  } catch (error) {
+    handleError(res, error);
+  }
+};
+
 const getLivreurPack = async (req, res) => {
   try {
     const pack = await getLivreurMlPack(resolveUser(req));
@@ -172,6 +182,7 @@ module.exports = {
   getClientAgentPack,
   getAdminOrdersRisk,
   getAdminPack,
+  getAdminAgentPack,
   getLivreurPack,
   getLivreurOrdersRisk,
   getVetPack,
