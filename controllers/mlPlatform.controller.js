@@ -5,6 +5,7 @@ const {
 } = require('../services/mlPlatform.service');
 const {
   getClientAiPack,
+  getClientMlAgentPack,
   getAdminMlPack,
   getLivreurMlPack,
   getLivreurOrdersRiskMap,
@@ -20,6 +21,9 @@ const handleError = (res, error, code = 500) => {
   console.error('ML platform error:', error);
   res.status(error.status || code).json({ error: error.message || 'Erreur ML' });
 };
+
+const resolveUser = (req) =>
+  isDemoMode() ? demoStore.getUserById(req.user.id || req.user._id) || req.user : req.user;
 
 const getAdminInsights = async (req, res) => {
   try {
@@ -97,8 +101,17 @@ const getOrderRisk = async (req, res) => {
 
 const getClientPack = async (req, res) => {
   try {
-    const user = isDemoMode() ? demoStore.getUserById(req.user.id || req.user._id) || req.user : req.user;
+    const user = resolveUser(req);
     const pack = await getClientAiPack(user);
+    res.json(pack);
+  } catch (error) {
+    handleError(res, error);
+  }
+};
+
+const getClientAgentPack = async (req, res) => {
+  try {
+    const pack = await getClientMlAgentPack(resolveUser(req));
     res.json(pack);
   } catch (error) {
     handleError(res, error);
@@ -113,9 +126,6 @@ const getAdminOrdersRisk = async (req, res) => {
     handleError(res, error);
   }
 };
-
-const resolveUser = (req) =>
-  isDemoMode() ? demoStore.getUserById(req.user.id || req.user._id) || req.user : req.user;
 
 const getAdminPack = async (req, res) => {
   try {
@@ -159,6 +169,7 @@ module.exports = {
   postSeniorDogRank,
   getOrderRisk,
   getClientPack,
+  getClientAgentPack,
   getAdminOrdersRisk,
   getAdminPack,
   getLivreurPack,

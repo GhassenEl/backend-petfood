@@ -172,7 +172,121 @@ const getClientAiPack = async (user) => {
 
 };
 
+const getClientMlAgentPack = async (user) => {
+  const userId = String(user.id || user._id);
+  const [personalized, petReco, mlHealth] = await Promise.all([
+    getPersonalizedRecommendations(user, { limit: 10 }).catch(() => null),
+    getPetRecommendations(user, { limit: 10 }).catch(() => null),
+    checkPythonMlHealth().catch(() => ({ ok: false })),
+  ]);
 
+  let petRankings = [];
+  let mlRanking = null;
+  let rebuyScore = null;
+  let topDemand = [];
+  let pythonPowered = false;
+
+  let snapshot = { products: [], pets: [], orders: [] };
+  try {
+    snapshot = await exportMlSnapshot();
+  } catch {
+    snapshot = { products: [], pets: [], orders: [] };
+  }
+
+  const userPets = snapshot.pets.filter((p) => p.ownerId === userId);
+
+  if (mlHealth?.ok) {
+    try {
+      for (const pet of userPets.slice(0, 5)) {
+        const items = await rankForPet(snapshot, userId, pet, 6);
+        if (items?.length) {
+          petRankings.push({
+            pet: { id: pet.id, name: pet.name, type: pet.type, breed: pet.breed },
+            items,
+          });
+        }
+      }
+      if (petRankings[0]) mlRanking = petRankings[0];
+      const platform = await getPlatformInsights();
+      rebuyScore = platform.churnPredictions?.find((c) => c.userId === userId) || null;
+      topDemand = (platform.productDemand || []).slice(0, 6);
+      pythonPowered = Boolean(platform.pythonPowered || petRankings.length > 0);
+    } catch (err) {
+      console.warn('[ML Orchestrator] client agent:', err.message);
+    }
+  }
+
+  const adoptionCatalog = (snapshot.products || [])
+    .filter((p) => p.category === 'animaux')
+    .slice(0, 6)
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      animalType: p.animalType,
+      price: p.price,
+      category: p.category,
+    }));
+
+  const actionHints = [];
+  if (rebuyScore && (rebuyScore.rebuyProbability ?? 1) < 0.45) {
+    actionHints.push({
+      type: 'reorder',
+      label: 'Réassort recommandé selon vos habitudes d\'achat',
+      link: '/client-products',
+    });
+  }
+  if (userPets.length > 0) {
+    actionHints.push({
+      type: 'feeder',
+      label: `Nutrition IoT pour ${userPets[0].name}`,
+      link: '/pet-feeder',
+    });
+  }
+  if (adoptionCatalog.length > 0) {
+    actionHints.push({
+      type: 'adoption',
+      label: 'Animaux à adopter sur PetfoodTN',
+      link: '/client-products?category=animaux',
+    });
+  }
+  actionHints.push({
+    type: 'chat',
+    label: 'Discuter avec l\'assistant catalogue (Groq)',
+    link: '/client-ai',
+  });
+
+  const topRecommendations = (personalized?.recommendations || petReco?.recommendations || []).slice(0, 10);
+
+  return {
+    role: 'client',
+    agent: 'client_ml_agent',
+    pythonPowered,
+    groqPowered: Boolean(personalized?.aiPowered),
+    models: [
+      pythonPowered ? 'xgboost' : null,
+      personalized?.aiPowered ? 'groq' : null,
+      'pet_scoring',
+      'rules_scoring',
+    ].filter(Boolean),
+    summary: personalized?.summary || petReco?.recommendations?.[0]?.recommendedReason,
+    trends: personalized?.trends,
+    preferences: personalized?.preferences,
+    reviewExperience: personalized?.reviewExperience,
+    pets: personalized?.pets || petReco?.pets || userPets,
+    personalized,
+    petRecommendations: petReco,
+    mlRanking,
+    petRankings,
+    rebuyScore,
+    trendingProducts: topDemand,
+    topRecommendations,
+    adoptionCatalog,
+    actionHints,
+    tip: personalized?.aiPowered
+      ? 'Analyse Groq + modèles XGBoost actifs pour vos animaux'
+      : 'Activez le service ML Python pour des recommandations encore plus précises',
+  };
+};
 
 const getAdminMlPack = async () => {
 
@@ -431,6 +545,8 @@ const getAdminOrdersRiskMap = async () => {
 module.exports = {
 
   getClientAiPack,
+
+  getClientMlAgentPack,
 
   getAdminMlPack,
 

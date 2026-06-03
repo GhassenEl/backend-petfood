@@ -6,6 +6,7 @@ const {
   postSeniorDogRank,
   getOrderRisk,
   getClientPack,
+  getClientAgentPack,
   getAdminOrdersRisk,
   getAdminPack,
   getLivreurPack,
@@ -19,6 +20,7 @@ router.get('/health', auth, adminAuth, getMlHealth);
 router.get('/admin/insights', auth, adminAuth, getAdminInsights);
 router.get('/admin/orders-risk', auth, adminAuth, getAdminOrdersRisk);
 router.get('/client/pack', auth, getClientPack);
+router.get('/client/agent', auth, getClientAgentPack);
 router.get('/admin/pack', auth, adminAuth, getAdminPack);
 router.get('/livreur/pack', auth, livreurAuth, getLivreurPack);
 router.get('/livreur/orders-risk', auth, livreurAuth, getLivreurOrdersRisk);
