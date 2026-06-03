@@ -17,6 +17,13 @@ const {
   getClinicAgentPack,
   getPharmacyAgentPack,
 } = require('../controllers/mlPlatform.controller');
+const {
+  getPack: getIncidentPack,
+  getQueue: getIncidentQueue,
+  postProcessOne: processIncidentOne,
+  postProcessAll: processIncidentAll,
+  postValidate: validateIncidentProposal,
+} = require('../controllers/incidentMl.controller');
 
 const router = express.Router();
 
@@ -35,5 +42,11 @@ router.get('/vet/clinic/agent', auth, vetAuth, getClinicAgentPack);
 router.get('/vet/pharmacy/agent', auth, vetAuth, getPharmacyAgentPack);
 router.get('/rank/senior-dog', auth, postSeniorDogRank);
 router.get('/orders/:orderId/cancel-risk', auth, adminAuth, getOrderRisk);
+
+router.get('/incidents/agent', auth, adminAuth, getIncidentPack);
+router.get('/incidents/queue', auth, adminAuth, getIncidentQueue);
+router.post('/incidents/process-all', auth, adminAuth, processIncidentAll);
+router.post('/incidents/:id/process', auth, adminAuth, processIncidentOne);
+router.post('/incidents/:id/validate', auth, adminAuth, validateIncidentProposal);
 
 module.exports = router;

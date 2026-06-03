@@ -762,13 +762,92 @@ const createComplaint = (user, payload) => {
 };
 
 const updateComplaint = (id, payload) => {
-  const index = store.complaints.findIndex((complaint) => complaint._id === id);
+  const index = store.complaints.findIndex(
+    (complaint) => complaint._id === id || complaint.id === id
+  );
   if (index === -1) return null;
   store.complaints[index] = {
     ...store.complaints[index],
+    ...payload,
     response: payload.response ?? store.complaints[index].response,
     status: payload.status ?? store.complaints[index].status,
   };
+  return clone(store.complaints[index]);
+};
+
+const processComplaintWithAi = (id) => {
+  const index = store.complaints.findIndex(
+    (c) => c._id === id || c.id === id
+  );
+  if (index === -1) return { error: 'not found' };
+  const c = store.complaints[index];
+  const proposed = `Bonjour ${c.userId?.name || 'Client'}, nous avons analysé votre demande « ${c.subject} ». Notre équipe valide cette réponse avant envoi officiel. Délai habituel : 48 h.`;
+  store.complaints[index] = {
+    ...c,
+    status: 'ai_proposed',
+    aiCategory: 'other',
+    aiPriority: 'medium',
+    aiProposedResponse: proposed,
+    aiResolutionPlan: JSON.stringify({ steps: ['Vérifier commande', 'Validation admin'] }),
+    aiConfidence: 0.72,
+    aiProcessedAt: now(),
+    response: proposed,
+    adminValidated: false,
+  };
+  return { complaint: clone(store.complaints[index]), analysis: { status: 'ai_proposed' } };
+};
+
+const processAllPendingIncidentsAi = (limit = 20) => {
+  const pending = store.complaints.filter((c) =>
+    ['pending', 'in_progress'].includes(c.status)
+  );
+  const results = pending.slice(0, limit).map((c) => {
+    const r = processComplaintWithAi(c._id || c.id);
+    return { id: c._id, ok: !r.error, ...r.analysis };
+  });
+  return { processed: results.length, results };
+};
+
+const getIncidentValidationQueue = () => {
+  const queue = store.complaints.filter(
+    (c) => c.status === 'ai_proposed' && !c.adminValidated
+  );
+  return { role: 'admin', agent: 'incident_ml_agent', queue: clone(queue), stats: { awaitingValidation: queue.length } };
+};
+
+const getIncidentAgentPack = () => {
+  const queue = store.complaints.filter((c) => c.status === 'ai_proposed');
+  return {
+    ...getIncidentValidationQueue(),
+    summary: `${queue.length} proposition(s) IA à valider.`,
+    platformStats: {
+      awaitingValidation: queue.length,
+      pendingForAgent: store.complaints.filter((c) => c.status === 'pending').length,
+      validatedLast24h: 0,
+    },
+  };
+};
+
+const validateIncidentAi = (id, adminId, { approved, response, rejectReason }) => {
+  const index = store.complaints.findIndex((c) => c._id === id || c.id === id);
+  if (index === -1) return null;
+  if (approved) {
+    store.complaints[index] = {
+      ...store.complaints[index],
+      status: 'resolved',
+      response: response || store.complaints[index].aiProposedResponse,
+      adminValidated: true,
+      validatedBy: adminId,
+      validatedAt: now(),
+    };
+  } else {
+    store.complaints[index] = {
+      ...store.complaints[index],
+      status: 'in_progress',
+      adminValidated: false,
+      response: rejectReason ? `[IA rejetée] ${rejectReason}` : store.complaints[index].response,
+    };
+  }
   return clone(store.complaints[index]);
 };
 
@@ -1070,6 +1149,11 @@ module.exports = {
   createComplaint,
   updateComplaint,
   deleteComplaint,
+  processComplaintWithAi,
+  processAllPendingIncidentsAi,
+  getIncidentValidationQueue,
+  getIncidentAgentPack,
+  validateIncidentAi,
   getMessages,
   createMessage,
   getVeterinaryContactRequests,

@@ -302,17 +302,26 @@ model WalletTransaction {
 }
 
 model Complaint {
-  id        String   @id @default(uuid())
-  userId    String?
-  email     String?
-  name      String?
-  subject   String
-  message   String
-  orderId   String?
-  status    String   @default("pending")
-  response  String?
-  createdAt DateTime @default(now())
-  user      User?    @relation(fields: [userId], references: [id])
+  id                 String    @id @default(uuid())
+  userId             String?
+  email              String?
+  name               String?
+  subject            String
+  message            String
+  orderId            String?
+  status             String    @default("pending")
+  response           String?
+  aiCategory         String?
+  aiPriority         String?
+  aiProposedResponse String?
+  aiResolutionPlan   String?
+  aiConfidence       Float?
+  aiProcessedAt      DateTime?
+  adminValidated     Boolean   @default(false)
+  validatedBy        String?
+  validatedAt        DateTime?
+  createdAt          DateTime  @default(now())
+  user               User?     @relation(fields: [userId], references: [id])
 }
 
 model Invoice {

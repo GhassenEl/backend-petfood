@@ -30,7 +30,15 @@ const createComplaint = async (req, res) => {
     const message = req.body.message || req.body.description;
 
     if (isDemoMode() || isDemoUser(req.user)) {
-      return res.status(201).json(demoStore.createComplaint(req.user, { subject, message, orderId }));
+      const created = demoStore.createComplaint(req.user, { subject, message, orderId });
+      setImmediate(() => {
+        try {
+          demoStore.processComplaintWithAi(created._id || created.id);
+        } catch (e) {
+          console.warn('[Incident ML demo]', e.message);
+        }
+      });
+      return res.status(201).json(created);
     }
 
     const complaint = await prisma.complaint.create({
@@ -59,6 +67,13 @@ const createComplaint = async (req, res) => {
     }
 
     res.status(201).json(complaint);
+
+    setImmediate(() => {
+      const { processComplaintById } = require('../services/incidentMlAgent.service');
+      processComplaintById(complaint.id).catch((err) =>
+        console.warn('[Incident ML] auto-process:', err.message)
+      );
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
