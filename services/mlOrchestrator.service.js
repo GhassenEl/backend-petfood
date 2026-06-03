@@ -618,6 +618,7 @@ const getVetMlAgentPack = async (user) => {
   );
 
   const actionHints = [
+    { type: 'clinical_ml', label: 'Agent anomalies & maladie', link: '/vet/diagnostics' },
     { type: 'diagnostics', label: 'Diagnostic IA patient', link: '/vet/diagnostics' },
     { type: 'dossiers', label: 'Dossiers médicaux', link: '/vet/medical-dossiers' },
     { type: 'calendar', label: 'Calendrier RDV', link: '/vet/calendar' },

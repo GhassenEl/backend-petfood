@@ -24,6 +24,13 @@ const {
   postProcessAll: processIncidentAll,
   postValidate: validateIncidentProposal,
 } = require('../controllers/incidentMl.controller');
+const {
+  getAgentPack: getVetClinicalAgentPack,
+  postAnalyze: postVetClinicalAnalyze,
+  getPatientContext: getVetClinicalPatientContext,
+  postApplyDossier: postVetClinicalApplyDossier,
+  postApplyPrescription: postVetClinicalApplyPrescription,
+} = require('../controllers/vetClinicalMl.controller');
 
 const router = express.Router();
 
@@ -40,6 +47,11 @@ router.get('/vet/pack', auth, vetAuth, getVetPack);
 router.get('/vet/agent', auth, vetAuth, getVetAgentPack);
 router.get('/vet/clinic/agent', auth, vetAuth, getClinicAgentPack);
 router.get('/vet/pharmacy/agent', auth, vetAuth, getPharmacyAgentPack);
+router.get('/vet/clinical/agent', auth, vetAuth, getVetClinicalAgentPack);
+router.post('/vet/clinical/analyze', auth, vetAuth, postVetClinicalAnalyze);
+router.get('/vet/clinical/patient-context', auth, vetAuth, getVetClinicalPatientContext);
+router.post('/vet/clinical/analyses/:id/apply-dossier', auth, vetAuth, postVetClinicalApplyDossier);
+router.post('/vet/clinical/analyses/:id/apply-prescription', auth, vetAuth, postVetClinicalApplyPrescription);
 router.get('/rank/senior-dog', auth, postSeniorDogRank);
 router.get('/orders/:orderId/cancel-risk', auth, adminAuth, getOrderRisk);
 

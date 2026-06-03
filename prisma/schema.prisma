@@ -54,6 +54,7 @@ model User {
   walletBalance      Float                      @default(0)
   walletTransactions WalletTransaction[]
   foundMeReports     PetFoundMeReport[]
+  vetClinicalAnalyses VetClinicalAiAnalysis[]
 }
 
 model PetFeeder {
@@ -640,6 +641,31 @@ model MedicalDossierEntry {
   signer             User?             @relation("EntrySigner", fields: [signedByVetId], references: [id])
 
   @@index([dossierId, visitDate])
+}
+
+/// Analyse IA anomalies animal — historique vétérinaire (urgent / non urgent, maladie)
+model VetClinicalAiAnalysis {
+  id               String   @id @default(uuid())
+  vetId            String
+  ownerId          String?
+  petId            String?
+  petName          String
+  animalType       String   @default("dog")
+  symptoms         String
+  vitalsJson       String?
+  urgency          String   @default("routine")
+  urgencyClass     String   @default("non_urgent")
+  diseaseSuspected Boolean  @default(false)
+  anomaliesJson    String?
+  analysisJson     String
+  dossierEntryId   String?
+  prescriptionId   String?
+  followUpDays     Int?
+  createdAt        DateTime @default(now())
+  vet              User     @relation(fields: [vetId], references: [id])
+
+  @@index([vetId, createdAt])
+  @@index([ownerId, petName])
 }
 
 /// Retrouvé Moi — signalements animal perdu ou trouvé

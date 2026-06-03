@@ -9,13 +9,16 @@ IMPORTANT :
 - Ne remplace pas l'examen clinique du vétérinaire.
 - Structure exacte :
 {
-  "anomalies": [{"label":"...", "severity":"low|medium|high", "description":"..."}],
+  "anomalies": [{"label":"...", "severity":"low|medium|high", "description":"...", "likelyDisease": true|false}],
   "diagnosticHypotheses": [{"condition":"...", "confidence":"low|medium|high", "rationale":"..."}],
   "recommendedMedications": [{"name":"...", "dosage":"...", "frequency":"...", "duration":"...", "notes":"..."}],
   "recommendedVaccines": [{"name":"...", "schedule":"...", "reason":"..."}],
   "dietPlan": {"summary":"...", "mealsPerDay":"...", "recommendedFoods":["..."], "foodsToAvoid":["..."], "supplements":["..."]},
   "clinicalNotes": "...",
   "urgency": "routine|soon|urgent",
+  "urgencyClass": "urgent|non_urgent",
+  "diseaseSuspected": true|false,
+  "healthFollowUp": {"nextVisitDays": 7, "monitoring":["..."], "warningSigns":["..."]},
   "followUpDays": 7
 }`;
 
@@ -237,6 +240,13 @@ const ruleBasedAnalysis = async (profile, symptoms) => {
     clinicalNotes:
       'Analyse générée sans IA cloud (mode règles). Confirmer par examen physique complet.',
     urgency: anomalies.some((a) => a.severity === 'high') ? 'soon' : 'routine',
+    urgencyClass: anomalies.some((a) => a.severity === 'high') ? 'urgent' : 'non_urgent',
+    diseaseSuspected: anomalies.some((a) => a.severity !== 'low'),
+    healthFollowUp: {
+      nextVisitDays: 7,
+      monitoring: ['Appétit', 'Hydratation', 'Comportement'],
+      warningSigns: ['Vomissements répétés', 'Léthargie', 'Refus de boire'],
+    },
     followUpDays: 7,
     aiPowered: false,
   };
@@ -273,6 +283,13 @@ const analyzePetAnomalies = async ({ ownerId, petId, petName, animalType, sympto
       },
       clinicalNotes: 'Surveiller hydratation 48 h. Reconsulter si vomissements ou léthargie.',
       urgency: 'soon',
+      urgencyClass: 'urgent',
+      diseaseSuspected: true,
+      healthFollowUp: {
+        nextVisitDays: 5,
+        monitoring: ['Hydratation', 'Appétit', 'Selles'],
+        warningSigns: ['Vomissements', 'Léthargie', 'Gêne respiratoire'],
+      },
       followUpDays: 5,
       aiPowered: true,
     };
