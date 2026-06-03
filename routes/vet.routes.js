@@ -39,6 +39,15 @@ const {
 } = require('../controllers/medicalDossier.controller');
 
 const { getProfile, updateProfile, getStats } = require('../controllers/clinic.controller');
+const {
+  getMyAvailability,
+  updateMyAvailability,
+  previewSlots,
+} = require('../controllers/vetAvailability.controller');
+
+router.get('/availability', auth, vetAuth, getMyAvailability);
+router.put('/availability', auth, vetAuth, updateMyAvailability);
+router.get('/availability/preview', auth, vetAuth, previewSlots);
 
 router.get('/clinic', auth, vetAuth, getProfile);
 router.patch('/clinic', auth, vetAuth, updateProfile);

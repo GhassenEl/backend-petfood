@@ -17,101 +17,13 @@ const parseDateOnly = (dateStr) => {
   return new Date(`${iso}T00:00:00.000Z`);
 };
 
-const buildDemoSlotsForDate = (dateStr) => {
-  // disponibilité fictive: 2 blocs, découpés en créneaux de 60 minutes
-  // Slots renvoyés en timestamp ISO (début)
-  const baseDate = parseDateOnly(dateStr);
-  if (!baseDate) return [];
-
-  const dayStart = new Date(baseDate);
-  const slots = [];
-
-  const addRange = (startHour, endHour) => {
-    for (let h = startHour; h < endHour; h += 1) {
-      const start = new Date(dayStart);
-      start.setUTCHours(h, 0, 0, 0);
-      const end = new Date(dayStart);
-      end.setUTCHours(h + 1, 0, 0, 0);
-
-      slots.push({
-        start: start.toISOString(),
-        end: end.toISOString(),
-        capacity: 1,
-        isAvailable: true,
-      });
-    }
-  };
-
-  addRange(9, 12); // 09-12
-  addRange(14, 17); // 14-17
-
-  return slots;
-};
+const { getPublicAvailabilitySlots } = require('../services/vetAvailability.service');
 
 const getAvailabilitySlots = async (req, res) => {
   try {
-    const { date } = req.query;
-
-    const selectedDate = date || new Date().toISOString().slice(0, 10);
-    if (isDemoMode()) {
-      const slots = buildDemoSlotsForDate(selectedDate);
-      return res.json({ date: selectedDate, slots });
-    }
-
-    // Version DB: on utilise PetAppointment pour déduire des slots déjà pris.
-    // Hypothèse: 1 RV par heure (capacité 1) et pas de table de disponibilité.
-    const slots = buildDemoSlotsForDate(selectedDate);
-
-    // Collecter les RDV déjà existants sur la date (scheduled/confirmed)
-    const dayStart = parseDateOnly(selectedDate);
-    const dayEnd = new Date(dayStart);
-    dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
-
-    const existing = await prisma.petAppointment.findMany({
-      where: {
-        date: {
-          gte: dayStart,
-          lt: dayEnd,
-        },
-        status: { in: ['scheduled', 'confirmed'] },
-      },
-      select: { date: true },
-    });
-
-    // Mark slots as taken using stable, timezone-safe hour matching.
-    // Current DB values may not match the exact ISO string we generate for the demo slots.
-    // Instead, consider a slot taken if there exists an appointment in the same hour block.
-    const appointmentsForDate = await prisma.petAppointment.findMany({
-      where: {
-        date: {
-          gte: dayStart,
-          lt: dayEnd,
-        },
-        status: { in: ['scheduled', 'confirmed'] },
-      },
-      select: { date: true },
-    });
-
-    const takenMinuteBucket = new Set(
-      appointmentsForDate
-        .map((a) => {
-          const d = new Date(a.date);
-          if (Number.isNaN(d.getTime())) return null;
-          // Bucket by hour in UTC: YYYY-MM-DDTHH:00
-          return d.toISOString().slice(0, 13) + ':00';
-        })
-        .filter(Boolean)
-    );
-
-    const adjusted = slots.map((s) => {
-      const slotBucket = new Date(s.start).toISOString().slice(0, 13) + ':00';
-      return {
-        ...s,
-        isAvailable: !takenMinuteBucket.has(slotBucket),
-      };
-    });
-
-    return res.json({ date: selectedDate, slots: adjusted });
+    const { date, vetId } = req.query;
+    const result = await getPublicAvailabilitySlots({ date, vetId });
+    return res.json(result);
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Failed to load availability' });
   }
@@ -238,6 +150,18 @@ const createAppointment = async (req, res) => {
     if (!petName) return res.status(400).json({ error: 'petName is required' });
     if (!animalType) return res.status(400).json({ error: 'animalType is required' });
     if (!date) return res.status(400).json({ error: 'date is required' });
+
+    if (!isClinicalStaff) {
+      const dateOnly = new Date(date).toISOString().slice(0, 10);
+      const { slots } = await getPublicAvailabilitySlots({ date: dateOnly });
+      const startMs = new Date(date).getTime();
+      const slotOk = slots.some(
+        (s) => new Date(s.start).getTime() === startMs && s.isAvailable !== false
+      );
+      if (!slotOk) {
+        return res.status(409).json({ error: 'Ce créneau n\'est pas disponible. Choisissez un autre horaire.' });
+      }
+    }
 
     const visit = normalizeVisitOptions({ visitMode, homeAddress, type: bodyType });
 
