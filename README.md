@@ -1,6 +1,6 @@
 # PetfoodTN — Backend
 
-Node.js / Express / SQLite backend powering the PetfoodTN platform (admin, client and delivery roles).
+Node.js / Express / SQLite backend powering the PetfoodTN platform (admin, client, livreur, vet). **Architecture monolithe** : un seul serveur (`server.js`, port 5002) — pas de microservices.
 
 Front-end repo: https://github.com/GhassenEl/frontend-petfood
 

@@ -1,38 +1,39 @@
-const { createJsonProxy } = require('../utils/proxyRequest');
-
 /**
- * Monte une route locale ou proxy vers un microservice si SERVICE_URL est défini.
+ * Enregistrement des routes API — mode monolithe uniquement.
+ * Toutes les routes sont servies par le même processus Express (server.js).
+ * Les variables *_SERVICE_URL sont ignorées (pas de proxy microservices).
  */
-function mountService(app, mountPath, localRouter, serviceUrlEnv) {
-  const serviceUrl = process.env[serviceUrlEnv];
-  if (serviceUrl) {
-    const proxy = createJsonProxy(serviceUrl.replace(/\/$/, ''));
-    console.log(`  ↪ Proxy ${mountPath} → ${serviceUrl}`);
-    app.use(mountPath, (req, res) => proxy(req, res));
-    return;
+
+const MICROSERVICE_ENV_KEYS = [
+  'PRODUCT_SERVICE_URL',
+  'ORDER_SERVICE_URL',
+  'USER_SERVICE_URL',
+  'VETERINARY_SERVICE_URL',
+];
+
+const warnIfMicroserviceEnv = () => {
+  const set = MICROSERVICE_ENV_KEYS.filter((k) => process.env[k]?.trim());
+  if (set.length) {
+    console.warn(
+      `⚠️  Mode monolithe : variables ignorées (${set.join(', ')}). ` +
+        'Supprimez-les de backend/.env pour éviter toute confusion.'
+    );
   }
-  app.use(mountPath, localRouter);
-}
+};
 
 function registerGatewayRoutes(app) {
-  console.log('📡 Gateway routes:');
+  warnIfMicroserviceEnv();
+  console.log('📡 API monolithe (routes locales) :');
 
-  mountService(app, '/api/products', require('../routes/products.routes'), 'PRODUCT_SERVICE_URL');
-  mountService(app, '/api/orders', require('../routes/orders.routes'), 'ORDER_SERVICE_URL');
-  mountService(app, '/api/users', require('../routes/users.routes'), 'USER_SERVICE_URL');
-  mountService(app, '/api/pets', require('../routes/pets.routes'), 'USER_SERVICE_URL');
+  app.use('/api/products', require('../routes/products.routes'));
+  app.use('/api/orders', require('../routes/orders.routes'));
+  app.use('/api/users', require('../routes/users.routes'));
+  app.use('/api/pets', require('../routes/pets.routes'));
 
-  const vetUrl = process.env.VETERINARY_SERVICE_URL;
-  if (vetUrl) {
-    const vetProxy = createJsonProxy(vetUrl.replace(/\/$/, ''));
-    console.log(`  ↪ Proxy /api/veterinary → ${vetUrl}`);
-    app.use('/api/veterinary', (req, res) => vetProxy(req, res));
-  } else {
-    app.use('/api/veterinary', require('../routes/veterinaryContact.routes'));
-    app.use('/api/veterinary', require('../routes/veterinaryAppointments.routes'));
-    app.use('/api/veterinary', require('../routes/veterinaryAppointments.alias.routes'));
-    app.use('/api/veterinary', require('../routes/veterinary.routes'));
-  }
+  app.use('/api/veterinary', require('../routes/veterinaryContact.routes'));
+  app.use('/api/veterinary', require('../routes/veterinaryAppointments.routes'));
+  app.use('/api/veterinary', require('../routes/veterinaryAppointments.alias.routes'));
+  app.use('/api/veterinary', require('../routes/veterinary.routes'));
 
   app.use('/api/auth', require('../routes/auth.routes'));
   app.use('/api/reviews', require('../routes/reviews.routes'));
@@ -59,5 +60,10 @@ function registerGatewayRoutes(app) {
   app.use('/api/service-bookings', require('../routes/serviceBookings.routes'));
   app.use('/api/blog-articles', require('../routes/blogArticles.routes'));
 }
+
+/** @deprecated Conservé pour compatibilité — équivalent à registerGatewayRoutes */
+const mountService = (app, mountPath, localRouter) => {
+  app.use(mountPath, localRouter);
+};
 
 module.exports = { registerGatewayRoutes, mountService };
