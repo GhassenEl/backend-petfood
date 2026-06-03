@@ -60,6 +60,7 @@ function registerGatewayRoutes(app) {
   app.use('/api/wallet', require('../routes/wallet.routes'));
   app.use('/api/service-bookings', require('../routes/serviceBookings.routes'));
   app.use('/api/blog-articles', require('../routes/blogArticles.routes'));
+  app.use('/api/found-me', require('../routes/foundMe.routes'));
 }
 
 /** @deprecated Conservé pour compatibilité — équivalent à registerGatewayRoutes */

@@ -17,6 +17,7 @@ const {
   createVeterinaryRecords,
   createPetAppointments,
   createPetVaccines,
+  createFoundMeDemoReports,
 } = require('./utils/demoData');
 const { defaultBlogArticles } = require('./utils/defaultBlogArticles');
 
@@ -169,6 +170,22 @@ const seedData = async () => {
     console.log(`✅ ${allVaccines.length} vaccins`);
 
     await seedBlogArticles();
+
+    const fmCount = await prisma.petFoundMeReport.count();
+    if (fmCount === 0) {
+      const fmClient =
+        clientUsers.find((u) => u.email === 'client@petfood.tn') || clientUsers[0];
+      const fmRows = createFoundMeDemoReports(fmClient.id);
+      for (const row of fmRows) {
+        await prisma.petFoundMeReport.create({
+          data: {
+            ...row,
+            lastSeenAt: row.lastSeenAt ? new Date(row.lastSeenAt) : undefined,
+          },
+        });
+      }
+      console.log(`✅ ${fmRows.length} signalements Retrouvé Moi`);
+    }
 
     const orderClient =
       clientUsers.find((u) => u.email === 'client@petfood.tn') || clientUsers[0];

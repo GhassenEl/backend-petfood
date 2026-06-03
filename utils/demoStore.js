@@ -265,6 +265,60 @@ let store = {
   complaints: [],
   messages: [],
   blogArticles: buildDefaultBlogStore(),
+  foundMeReports: [
+    {
+      id: 'fm_demo_lost_1',
+      tagCode: 'FM-DEMO01',
+      reportType: 'lost',
+      reporterId: 'demo_client',
+      petName: 'Rex',
+      animalType: 'dog',
+      breed: 'Berger allemand',
+      color: 'noir et feu',
+      distinctiveMarks: 'Collier rouge avec médaille FM-DEMO01',
+      description: 'Fugue le 12/05 vers le lac 2. Très sociable.',
+      photoUrl: 'https://images.unsplash.com/photo-1587300003388-59208cc962cb?auto=format&fit=crop&w=600&q=80',
+      lastSeenAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+      location: 'Lac 2, Tunis',
+      region: 'Grand Tunis',
+      status: 'active',
+      createdAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    {
+      id: 'fm_demo_found_1',
+      tagCode: 'FM-DEMO02',
+      reportType: 'found',
+      reporterId: 'demo_client',
+      petName: 'Chien trouvé',
+      animalType: 'dog',
+      breed: 'berger',
+      color: 'noir',
+      description: 'Vu près du parc, semble perdu, pas de puce visible.',
+      photoUrl: 'https://images.unsplash.com/photo-1548199973-03cce0bbc87b?auto=format&fit=crop&w=600&q=80',
+      lastSeenAt: new Date(Date.now() - 86400000).toISOString(),
+      location: 'Ariana Ville',
+      region: 'Grand Tunis',
+      status: 'active',
+      createdAt: new Date(Date.now() - 86400000).toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    {
+      id: 'fm_demo_lost_2',
+      tagCode: 'FM-DEMO03',
+      reportType: 'lost',
+      reporterId: 'demo_client',
+      petName: 'Mimi',
+      animalType: 'cat',
+      breed: 'Européen',
+      color: 'gris tigré',
+      location: 'Manar 2',
+      region: 'Grand Tunis',
+      status: 'active',
+      createdAt: new Date(Date.now() - 5 * 86400000).toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+  ],
 };
 
 const getUserById = (id) => store.users.find((user) => user._id === id);
@@ -851,6 +905,39 @@ const deleteBlogArticle = (id) => {
   return store.blogArticles.length < before;
 };
 
+const getFoundMeReports = () => clone(store.foundMeReports || []);
+
+const getFoundMeReportById = (id) => {
+  const row = (store.foundMeReports || []).find((r) => r.id === id);
+  return row ? clone(row) : null;
+};
+
+const getFoundMeReportByTag = (tagCode) => {
+  const code = String(tagCode || '').trim().toUpperCase();
+  const row = (store.foundMeReports || []).find((r) => r.tagCode === code);
+  return row ? clone(row) : null;
+};
+
+const createFoundMeReport = (payload) => {
+  const report = {
+    id: createId('fm'),
+    ...payload,
+    tagCode: payload.tagCode || `FM-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
+    status: payload.status || 'active',
+    createdAt: now(),
+    updatedAt: now(),
+  };
+  store.foundMeReports.unshift(report);
+  return clone(report);
+};
+
+const updateFoundMeReport = (id, patch) => {
+  const idx = (store.foundMeReports || []).findIndex((r) => r.id === id);
+  if (idx < 0) return null;
+  store.foundMeReports[idx] = { ...store.foundMeReports[idx], ...patch, updatedAt: now() };
+  return clone(store.foundMeReports[idx]);
+};
+
 module.exports = {
   getUserById,
   getUsers,
@@ -888,5 +975,10 @@ module.exports = {
   createBlogArticle,
   updateBlogArticle,
   deleteBlogArticle,
+  getFoundMeReports,
+  getFoundMeReportById,
+  getFoundMeReportByTag,
+  createFoundMeReport,
+  updateFoundMeReport,
 };
 

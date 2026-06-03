@@ -53,6 +53,7 @@ model User {
   serviceRatings     ServiceRating[]
   walletBalance      Float                      @default(0)
   walletTransactions WalletTransaction[]
+  foundMeReports     PetFoundMeReport[]
 }
 
 model PetFeeder {
@@ -131,6 +132,7 @@ model Pet {
   createdAt DateTime  @default(now())
   owner     User      @relation(fields: [ownerId], references: [id])
   dossier   PetMedicalDossier?
+  foundMeReports PetFoundMeReport[]
 }
 
 model Product {
@@ -624,6 +626,40 @@ model MedicalDossierEntry {
   signer             User?             @relation("EntrySigner", fields: [signedByVetId], references: [id])
 
   @@index([dossierId, visitDate])
+}
+
+/// Retrouvé Moi — signalements animal perdu ou trouvé
+model PetFoundMeReport {
+  id                String    @id @default(uuid())
+  tagCode           String    @unique
+  reportType        String
+  reporterId        String
+  petId             String?
+  petName           String
+  animalType        String
+  breed             String?
+  color             String?
+  distinctiveMarks  String?
+  description       String?
+  photoUrl          String?
+  lastSeenAt        DateTime?
+  location          String
+  region            String?
+  latitude          Float?
+  longitude         Float?
+  contactPhone      String?
+  contactEmail      String?
+  rewardOffered     String?
+  status            String    @default("active")
+  matchedReportId   String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  reporter          User      @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  pet               Pet?      @relation(fields: [petId], references: [id], onDelete: SetNull)
+
+  @@index([reportType, status])
+  @@index([animalType, status])
+  @@index([region])
 }
 
 /// Article de blog nutrition — publié par l'admin, lu par les clients

@@ -646,6 +646,56 @@ const createPetAppointments = ({ ownerId, count }) => {
   return appts;
 };
 
+const createFoundMeDemoReports = (ownerId) => {
+  const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString();
+  return [
+    {
+      tagCode: 'FM-DEMO01',
+      reportType: 'lost',
+      reporterId: ownerId,
+      petName: 'Rex',
+      animalType: 'dog',
+      breed: 'Berger allemand',
+      color: 'noir et feu',
+      distinctiveMarks: 'Collier rouge — code FM-DEMO01',
+      description: 'Fugue vers Lac 2. Répond au nom Rex.',
+      photoUrl: 'https://images.unsplash.com/photo-1587300003388-59208cc962cb?auto=format&fit=crop&w=600&q=80',
+      lastSeenAt: daysAgo(2),
+      location: 'Lac 2, Tunis',
+      region: 'Grand Tunis',
+      status: 'active',
+    },
+    {
+      tagCode: 'FM-DEMO02',
+      reportType: 'found',
+      reporterId: ownerId,
+      petName: 'Chien trouvé',
+      animalType: 'dog',
+      breed: 'berger',
+      color: 'noir',
+      description: 'Chien amical trouvé près du parc Ariana.',
+      photoUrl: 'https://images.unsplash.com/photo-1548199973-03cce0bbc87b?auto=format&fit=crop&w=600&q=80',
+      lastSeenAt: daysAgo(1),
+      location: 'Ariana Ville',
+      region: 'Grand Tunis',
+      status: 'active',
+    },
+    {
+      tagCode: 'FM-DEMO03',
+      reportType: 'lost',
+      reporterId: ownerId,
+      petName: 'Mimi',
+      animalType: 'cat',
+      breed: 'Européen',
+      color: 'gris tigré',
+      location: 'Manar 2, Tunis',
+      region: 'Grand Tunis',
+      lastSeenAt: daysAgo(4),
+      status: 'active',
+    },
+  ];
+};
+
 module.exports = {
   generateOrders,
   generateMessages,
@@ -656,6 +706,7 @@ module.exports = {
   createVeterinaryRecords,
   createPetAppointments,
   createPetVaccines,
+  createFoundMeDemoReports,
 };
 
 

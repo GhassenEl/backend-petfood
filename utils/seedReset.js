@@ -38,6 +38,7 @@ const resetWithDeleteMany = async () => {
     () => prisma.complaint.deleteMany(),
     () => prisma.review.deleteMany(),
     () => prisma.blogArticle.deleteMany(),
+    () => prisma.petFoundMeReport.deleteMany(),
     () => prisma.pet.deleteMany(),
     () => prisma.product.deleteMany(),
     () => prisma.promoCode.deleteMany(),
