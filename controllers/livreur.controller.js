@@ -8,8 +8,14 @@ const {
   getActiveMission,
   completeDelivery,
 } = require('../services/livreur.service');
+const { getLivreurOrdersRiskMap } = require('../services/mlOrchestrator.service');
+const { isDemoMode } = require('../prismaClient');
+const demoStore = require('../utils/demoStore');
 
 const getUserId = (req) => req.user?.id || req.user?._id;
+
+const resolveUser = (req) =>
+  isDemoMode() ? demoStore.getUserById(getUserId(req)) || req.user : req.user;
 
 const dashboard = async (req, res) => {
   try {
@@ -24,7 +30,39 @@ const routePlan = async (req, res) => {
   try {
     const lat = req.query.lat != null ? Number(req.query.lat) : undefined;
     const lng = req.query.lng != null ? Number(req.query.lng) : undefined;
-    const data = await optimizeRoute(getUserId(req), { lat, lng });
+    const user = resolveUser(req);
+    const [data, ml] = await Promise.all([
+      optimizeRoute(getUserId(req), { lat, lng }),
+      getLivreurOrdersRiskMap(user).catch(() => null),
+    ]);
+    if (ml?.risks) {
+      data.mlPowered = ml.pythonPowered;
+      data.poolPriority = ml.poolPriority;
+      data.stops = (data.stops || []).map((stop) => {
+        const orderId = stop.order?.id;
+        const risk = orderId ? ml.risks[orderId] : null;
+        const priority = ml.poolPriority?.find((p) => p.orderId === orderId);
+        return {
+          ...stop,
+          mlRisk: risk,
+          mlPriorityScore: priority?.priorityScore ?? null,
+        };
+      });
+      if (ml.poolPriority?.length) {
+        const scoreMap = Object.fromEntries(
+          ml.poolPriority.map((p) => [p.orderId, p.priorityScore])
+        );
+        data.stops.sort((a, b) => {
+          const aShip = a.order?.status === 'shipped' ? 1 : 0;
+          const bShip = b.order?.status === 'shipped' ? 1 : 0;
+          if (bShip !== aShip) return bShip - aShip;
+          return (scoreMap[b.order?.id] || 0) - (scoreMap[a.order?.id] || 0);
+        });
+        data.stops.forEach((s, i) => {
+          s.stopNumber = i + 1;
+        });
+      }
+    }
     res.json(data);
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message || 'Erreur tournée' });

@@ -7,6 +7,7 @@ const {
   getClientAiPack,
   getAdminMlPack,
   getLivreurMlPack,
+  getLivreurOrdersRiskMap,
   getVetMlPack,
   getAdminOrdersRiskMap,
 } = require('../services/mlOrchestrator.service');
@@ -143,6 +144,15 @@ const getVetPack = async (req, res) => {
   }
 };
 
+const getLivreurOrdersRisk = async (req, res) => {
+  try {
+    const data = await getLivreurOrdersRiskMap(resolveUser(req));
+    res.json(data);
+  } catch (error) {
+    handleError(res, error);
+  }
+};
+
 module.exports = {
   getAdminInsights,
   getMlHealth,
@@ -152,5 +162,6 @@ module.exports = {
   getAdminOrdersRisk,
   getAdminPack,
   getLivreurPack,
+  getLivreurOrdersRisk,
   getVetPack,
 };

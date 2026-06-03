@@ -218,50 +218,112 @@ const getAdminMlPack = async () => {
 
 
 
-const getLivreurMlPack = async (user) => {
-
-  const insights = await getPlatformInsights().catch(() => ({}));
-
-  const region = user.region || user.city || 'Grand Tunis';
-
-  const risky = (insights.cancelRiskOrders || [])
-
-    .filter((r) => (r.cancelProbability ?? 0) >= 0.35)
-
-    .slice(0, 8);
-
-
-
-  const hourLoad = insights.anomalyDetection?.peakHours || ['17:00', '19:00'];
-
-
-
+const normalizeCancelRisk = (r) => {
+  const cancelRisk = Number(r.cancelRisk ?? r.cancelProbability ?? 0.2);
   return {
+    orderId: r.orderId,
+    cancelRisk,
+    highRisk: Boolean(r.highRisk ?? cancelRisk >= 0.45),
+    model: r.model || 'rules',
+    riskLabel: cancelRisk >= 0.45 ? 'élevé' : cancelRisk >= 0.3 ? 'moyen' : 'faible',
+  };
+};
 
-    role: 'livreur',
+const getLivreurOrdersRiskMap = async (user) => {
+  const region = user.region || user.city || null;
 
-    pythonPowered: Boolean(insights.pythonPowered),
+  const [insights, snapshot, mlHealth] = await Promise.all([
+    getPlatformInsights().catch(() => ({})),
+    exportMlSnapshot(),
+    checkPythonMlHealth().catch(() => ({ ok: false })),
+  ]);
 
-    models: insights.pythonPowered ? ['xgboost', 'cancel_risk', 'route_rules'] : ['route_rules'],
+  const risks = {};
+  for (const r of insights.cancelRiskOrders || []) {
+    risks[r.orderId] = normalizeCancelRisk(r);
+  }
 
-    region,
-
-    highCancelRiskDeliveries: risky,
-
-    busyHoursHint: Array.isArray(hourLoad) ? hourLoad.join(' · ') : '17h–20h',
-
-    productDemand: insights.productDemand?.slice(0, 5) || [],
-
-    tip:
-
-      risky.length > 0
-
-        ? `${risky.length} livraison(s) à risque d'annulation — confirmez avec le client avant départ`
-
-        : 'Charge normale prévue sur votre secteur',
-
+  const isRelevant = (o) => {
+    const st = String(o.status || '').toLowerCase();
+    if (!['pending', 'shipped', 'processing', 'paid'].includes(st)) return false;
+    if (region && o.region && o.region !== region) return false;
+    return true;
   };
 
+  const relevant = (snapshot.orders || []).filter(isRelevant);
+  const toEnrich = relevant.filter((o) => !risks[o.id]).slice(0, 25);
+
+  await Promise.all(
+    toEnrich.map(async (o) => {
+      try {
+        const hist = snapshot.orders.filter((x) => x.userId === o.userId && x.id !== o.id);
+        const risk = await getOrderCancelRisk(o, hist);
+        risks[o.id] = normalizeCancelRisk({ ...risk, orderId: o.id });
+      } catch {
+        risks[o.id] = normalizeCancelRisk({
+          orderId: o.id,
+          cancelRisk: Number(o.total) > 450 ? 0.5 : 0.22,
+        });
+      }
+    })
+  );
+
+  const poolPriority = relevant
+    .filter((o) => String(o.status).toLowerCase() === 'pending')
+    .map((o) => {
+      const r = risks[o.id] || normalizeCancelRisk({ orderId: o.id, cancelRisk: 0.2 });
+      const priorityScore = Math.round(
+        100 - r.cancelRisk * 45 + Math.min(Number(o.total || 0) / 25, 12)
+      );
+      return {
+        orderId: o.id,
+        total: o.total,
+        region: o.region,
+        priorityScore,
+        cancelRisk: r.cancelRisk,
+        highRisk: r.highRisk,
+        riskLabel: r.riskLabel,
+        recommendation: r.highRisk
+          ? 'Appeler le client avant de prendre la course'
+          : 'Course recommandée par IA',
+      };
+    })
+    .sort((a, b) => b.priorityScore - a.priorityScore);
+
+  const highCancelRiskDeliveries = Object.values(risks)
+    .filter((r) => r.cancelRisk >= 0.35)
+    .sort((a, b) => b.cancelRisk - a.cancelRisk)
+    .slice(0, 12);
+
+  const hourLoad = insights.anomalyDetection?.peakHours;
+  const todayDeliveriesForecast = Math.max(
+    1,
+    Math.round(poolPriority.length * 0.6 + (insights.productDemand?.length || 4) * 0.5)
+  );
+
+  return {
+    pythonPowered: Boolean(insights.pythonPowered || mlHealth?.ok),
+    models: insights.pythonPowered || mlHealth?.ok
+      ? ['xgboost_cancel', 'route_priority', 'demand_forecast']
+      : ['route_rules'],
+    region: region || 'Grand Tunis',
+    risks,
+    poolPriority,
+    highCancelRiskDeliveries,
+    busyHoursHint: Array.isArray(hourLoad) ? hourLoad.join(' · ') : '17h–20h',
+    todayDeliveriesForecast,
+    commissionForecastDt: todayDeliveriesForecast * 5,
+    productDemand: (insights.productDemand || []).slice(0, 5),
+    tip:
+      highCancelRiskDeliveries.length > 0
+        ? `${highCancelRiskDeliveries.length} commande(s) à risque d'annulation — confirmez avec le client avant départ`
+        : 'Priorisez les courses à score IA élevé dans la file d\'attente',
+  };
+};
+
+const getLivreurMlPack = async (user) => {
+  const pack = await getLivreurOrdersRiskMap(user);
+  return { role: 'livreur', ...pack };
 };
 
 
@@ -373,6 +435,8 @@ module.exports = {
   getAdminMlPack,
 
   getLivreurMlPack,
+
+  getLivreurOrdersRiskMap,
 
   getVetMlPack,
 

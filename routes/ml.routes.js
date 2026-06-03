@@ -9,6 +9,7 @@ const {
   getAdminOrdersRisk,
   getAdminPack,
   getLivreurPack,
+  getLivreurOrdersRisk,
   getVetPack,
 } = require('../controllers/mlPlatform.controller');
 
@@ -20,6 +21,7 @@ router.get('/admin/orders-risk', auth, adminAuth, getAdminOrdersRisk);
 router.get('/client/pack', auth, getClientPack);
 router.get('/admin/pack', auth, adminAuth, getAdminPack);
 router.get('/livreur/pack', auth, livreurAuth, getLivreurPack);
+router.get('/livreur/orders-risk', auth, livreurAuth, getLivreurOrdersRisk);
 router.get('/vet/pack', auth, vetAuth, getVetPack);
 router.get('/rank/senior-dog', auth, postSeniorDogRank);
 router.get('/orders/:orderId/cancel-risk', auth, adminAuth, getOrderRisk);
