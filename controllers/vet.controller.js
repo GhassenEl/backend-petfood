@@ -641,7 +641,17 @@ const getHistory = async (req, res) => {
         : [],
       !type || type === 'dossier'
         ? prisma.medicalDossierEntry.findMany({
-            where: req.user?.role === 'admin' ? {} : { vetId: getUserId(req) },
+            where: {
+              ...(req.user?.role === 'admin' ? {} : { vetId: getUserId(req) }),
+              ...(petName || ownerId
+                ? {
+                    dossier: {
+                      ...(petName ? { petName: { contains: petName } } : {}),
+                      ...(ownerId ? { ownerId } : {}),
+                    },
+                  }
+                : {}),
+            },
             orderBy: { visitDate: 'desc' },
             take: 50,
             include: {

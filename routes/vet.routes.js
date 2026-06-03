@@ -74,6 +74,13 @@ router.put('/prescriptions/:id', auth, vetAuth, updatePrescription);
 router.get('/clients', auth, vetAuth, getClients);
 router.get('/history', auth, vetAuth, getHistory);
 
+const {
+  getClinicalReport,
+  getNutritionRecommendation,
+} = require('../controllers/vetClinical.controller');
+router.get('/clinical-report', auth, vetAuth, getClinicalReport);
+router.get('/nutrition-recommendation', auth, vetAuth, getNutritionRecommendation);
+
 router.get('/contact-requests', auth, vetAuth, getContactRequests);
 router.put('/contact-requests/:id/respond', auth, vetAuth, respondContactRequest);
 

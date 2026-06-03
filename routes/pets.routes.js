@@ -12,8 +12,18 @@ const {
   getAppointments,
   createAppointment
 } = require('../controllers/veterinary.controller');
+const {
+  getAllPetCalories,
+  getPetCaloriesById,
+  postCalculateCalories,
+} = require('../controllers/petCalorie.controller');
 
 const router = express.Router();
+
+// Calories (avant /:petId pour éviter conflit de routes)
+router.get('/calories', auth, getAllPetCalories);
+router.post('/calories/calculate', auth, postCalculateCalories);
+router.get('/:petId/calories', auth, getPetCaloriesById);
 
 // Pets
 router.get('/', auth, getUserPets);

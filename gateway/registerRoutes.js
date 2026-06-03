@@ -57,6 +57,7 @@ function registerGatewayRoutes(app) {
   app.use('/api/promotions', require('../routes/promotions.routes'));
   app.use('/api/wallet', require('../routes/wallet.routes'));
   app.use('/api/service-bookings', require('../routes/serviceBookings.routes'));
+  app.use('/api/blog-articles', require('../routes/blogArticles.routes'));
 }
 
 module.exports = { registerGatewayRoutes, mountService };

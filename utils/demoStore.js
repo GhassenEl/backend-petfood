@@ -81,7 +81,7 @@ const demoProducts = [
     description: 'Snacks a macher pour hygiene dentaire et haleine fraiche.',
     stock: 53,
     animalType: 'dog',
-    category: 'snack',
+    category: 'friandises',
     tags: ['dentaire', 'naturel'],
     popularity: 90,
     rating_avg: 4.8,
@@ -97,7 +97,7 @@ const demoProducts = [
     description: 'Litiere absorbante sans poussiere pour usage quotidien.',
     stock: 27,
     animalType: 'cat',
-    category: 'hygiène',
+    category: 'accessoires',
     tags: ['absorbant', 'sans-poussiere'],
     popularity: 85,
     rating_avg: 4.6,
@@ -105,7 +105,154 @@ const demoProducts = [
     imageUrl: 'https://images.unsplash.com/photo-1574158622682-e40e69881006?auto=format&fit=crop&w=900&q=80',
     icon: '🐾',
   },
+  {
+    _id: 'prd_dog_jouet_1',
+    name: 'Balle Tennis Renforcée',
+    price: 12,
+    discount: 0,
+    description: 'Balle résistante pour chiens actifs, jeu en extérieur.',
+    stock: 40,
+    animalType: 'dog',
+    category: 'jouets',
+    tags: ['jouet', 'plein-air'],
+    popularity: 78,
+    rating_avg: 4.5,
+    rating_count: 19,
+    imageUrl: 'https://images.unsplash.com/photo-1601758228041-f3b2795255f1?auto=format&fit=crop&w=900&q=80',
+    icon: '🎾',
+  },
+  {
+    _id: 'prd_cat_jouet_1',
+    name: 'Canne à Plumes Interactive',
+    price: 18,
+    discount: 10,
+    description: 'Stimule l’instinct de chasse du chat d’intérieur.',
+    stock: 35,
+    animalType: 'cat',
+    category: 'jouets',
+    tags: ['jouet', 'interactif'],
+    popularity: 82,
+    rating_avg: 4.7,
+    rating_count: 24,
+    imageUrl: 'https://images.unsplash.com/photo-1526336024174-e58f5cdd8e13?auto=format&fit=crop&w=900&q=80',
+    icon: '🪶',
+  },
+  {
+    _id: 'prd_dog_acc_1',
+    name: 'Laisse Rétractable 5 m',
+    price: 32,
+    discount: 5,
+    description: 'Laisse confort poignée antidérapante, jusqu’à 25 kg.',
+    stock: 22,
+    animalType: 'dog',
+    category: 'accessoires',
+    tags: ['accessoire', 'promenade'],
+    popularity: 70,
+    rating_avg: 4.4,
+    rating_count: 15,
+    imageUrl: 'https://images.unsplash.com/photo-1587300003388-59208cc962cb?auto=format&fit=crop&w=900&q=80',
+    icon: '🦮',
+  },
+  {
+    _id: 'prd_cat_acc_1',
+    name: 'Arbre à Chat 120 cm',
+    price: 89,
+    discount: 15,
+    description: 'Griffoir, plateformes et cachette pour chat.',
+    stock: 8,
+    animalType: 'cat',
+    category: 'accessoires',
+    tags: ['accessoire', 'griffoir'],
+    popularity: 68,
+    rating_avg: 4.6,
+    rating_count: 12,
+    imageUrl: 'https://images.unsplash.com/photo-1545249390-6bdfa286032f?auto=format&fit=crop&w=900&q=80',
+    icon: '🌳',
+  },
+  {
+    _id: 'prd_dog_fri_1',
+    name: 'Friandises Poulet 200 g',
+    price: 11,
+    discount: 0,
+    description: 'Bouchées tendres sans céréales, récompense quotidienne.',
+    stock: 60,
+    animalType: 'dog',
+    category: 'friandises',
+    tags: ['friandise', 'poulet'],
+    popularity: 91,
+    rating_avg: 4.8,
+    rating_count: 48,
+    imageUrl: 'https://images.unsplash.com/photo-1601758228041-f3b2795255f1?auto=format&fit=crop&w=900&q=80',
+    icon: '🦴',
+  },
+  {
+    _id: 'prd_cat_fri_1',
+    name: 'Friandises Saumon Chat 80 g',
+    price: 9,
+    discount: 8,
+    description: 'Sticks croquants enrichis en oméga-3.',
+    stock: 45,
+    animalType: 'cat',
+    category: 'friandises',
+    tags: ['friandise', 'saumon'],
+    popularity: 86,
+    rating_avg: 4.7,
+    rating_count: 33,
+    imageUrl: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?auto=format&fit=crop&w=900&q=80',
+    icon: '🐟',
+  },
+  {
+    _id: 'prd_dog_vet_1',
+    name: 'Manteau Hiver Chien Taille M',
+    price: 45,
+    discount: 12,
+    description: 'Doublure polaire, coupe-vent, réglable au dos.',
+    stock: 14,
+    animalType: 'dog',
+    category: 'vetements',
+    tags: ['vetement', 'hiver'],
+    popularity: 62,
+    rating_avg: 4.3,
+    rating_count: 9,
+    imageUrl: 'https://images.unsplash.com/photo-1583511655857-d19b40a0a54e?auto=format&fit=crop&w=900&q=80',
+    icon: '🧥',
+  },
+  {
+    _id: 'prd_cat_vet_1',
+    name: 'Pull Doux Chat Taille S',
+    price: 28,
+    discount: 0,
+    description: 'Maille douce pour chats d’intérieur en saison froide.',
+    stock: 20,
+    animalType: 'cat',
+    category: 'vetements',
+    tags: ['vetement', 'chat'],
+    popularity: 58,
+    rating_avg: 4.2,
+    rating_count: 7,
+    imageUrl: 'https://images.unsplash.com/photo-1574158622682-e40e69881006?auto=format&fit=crop&w=900&q=80',
+    icon: '👕',
+  },
 ];
+
+const { defaultBlogArticles } = require('./defaultBlogArticles');
+
+const buildDefaultBlogStore = () =>
+  defaultBlogArticles.map((article, index) => {
+    const publishedAt = new Date();
+    publishedAt.setDate(publishedAt.getDate() - index * 14);
+    const id = `blog_default_${index + 1}`;
+    return {
+      _id: id,
+      id,
+      ...article,
+      isPublished: true,
+      publishedAt: publishedAt.toISOString(),
+      date: publishedAt.toISOString(),
+      createdAt: publishedAt.toISOString(),
+      updatedAt: publishedAt.toISOString(),
+    };
+  });
 
 // Keep store base structure but remove order/user references that depended on demoUsers.
 let store = {
@@ -117,6 +264,7 @@ let store = {
   serviceRatings: [],
   complaints: [],
   messages: [],
+  blogArticles: buildDefaultBlogStore(),
 };
 
 const getUserById = (id) => store.users.find((user) => user._id === id);
@@ -647,6 +795,62 @@ const createPlatformEvents = ({ ownerId, count = 12 } = {}) => {
   return events;
 };
 
+const getBlogArticles = ({ publishedOnly = false } = {}) => {
+  const list = clone(store.blogArticles || []);
+  if (publishedOnly) return list.filter((a) => a.isPublished !== false);
+  return list;
+};
+
+const createBlogArticle = (payload, authorId) => {
+  const publishedAt = payload.publishedAt ? new Date(payload.publishedAt) : new Date();
+  const article = {
+    _id: createId('blog'),
+    title: String(payload.title || '').trim(),
+    category: String(payload.category || 'Guide').trim(),
+    excerpt: String(payload.excerpt || '').trim(),
+    body: String(payload.body || '').trim(),
+    readMin: Math.max(1, Math.min(60, Number(payload.readMin) || 5)),
+    isPublished: payload.isPublished !== false,
+    publishedAt: publishedAt.toISOString(),
+    date: publishedAt.toISOString(),
+    authorId: authorId || null,
+    createdAt: now(),
+    updatedAt: now(),
+  };
+  article.id = article._id;
+  store.blogArticles.unshift(article);
+  return clone(article);
+};
+
+const updateBlogArticle = (id, payload) => {
+  const idx = store.blogArticles.findIndex((a) => a._id === id || a.id === id);
+  if (idx < 0) return null;
+  const current = store.blogArticles[idx];
+  const next = {
+    ...current,
+    ...payload,
+    title: payload.title !== undefined ? String(payload.title).trim() : current.title,
+    category: payload.category !== undefined ? String(payload.category).trim() : current.category,
+    excerpt: payload.excerpt !== undefined ? String(payload.excerpt).trim() : current.excerpt,
+    body: payload.body !== undefined ? String(payload.body).trim() : current.body,
+    readMin: payload.readMin !== undefined ? Math.max(1, Math.min(60, Number(payload.readMin) || 5)) : current.readMin,
+    isPublished: payload.isPublished !== undefined ? Boolean(payload.isPublished) : current.isPublished,
+    updatedAt: now(),
+  };
+  if (payload.publishedAt) {
+    next.publishedAt = new Date(payload.publishedAt).toISOString();
+    next.date = next.publishedAt;
+  }
+  store.blogArticles[idx] = next;
+  return clone(next);
+};
+
+const deleteBlogArticle = (id) => {
+  const before = store.blogArticles.length;
+  store.blogArticles = store.blogArticles.filter((a) => a._id !== id && a.id !== id);
+  return store.blogArticles.length < before;
+};
+
 module.exports = {
   getUserById,
   getUsers,
@@ -680,7 +884,9 @@ module.exports = {
   updateVeterinaryContactRequest,
   createPetAppointments,
   createPlatformEvents,
+  getBlogArticles,
+  createBlogArticle,
+  updateBlogArticle,
+  deleteBlogArticle,
 };
-
-
 

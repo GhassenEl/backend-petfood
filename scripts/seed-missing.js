@@ -105,10 +105,28 @@ async function ensurePets() {
   return created;
 }
 
-async function ensureProducts() {
-  const count = await prisma.product.count();
-  if (count >= demoProducts.length) return 0;
+async function ensureBlogArticles() {
+  const count = await prisma.blogArticle.count();
+  if (count > 0) return 0;
 
+  const { defaultBlogArticles } = require('../utils/defaultBlogArticles');
+  for (let i = 0; i < defaultBlogArticles.length; i += 1) {
+    const article = defaultBlogArticles[i];
+    const publishedAt = new Date();
+    publishedAt.setDate(publishedAt.getDate() - i * 14);
+    await prisma.blogArticle.create({
+      data: {
+        ...article,
+        isPublished: true,
+        publishedAt,
+      },
+    });
+  }
+  console.log(`✅ ${defaultBlogArticles.length} article(s) blog créés`);
+  return defaultBlogArticles.length;
+}
+
+async function ensureProducts() {
   const existingIds = new Set(
     (await prisma.product.findMany({ select: { id: true } })).map((p) => p.id)
   );
@@ -1177,6 +1195,7 @@ async function seedMissing() {
     const { ensureVetsByRegion } = require('../utils/ensureVetsByRegion');
     await ensureVetsByRegion();
     await ensureProducts();
+    await ensureBlogArticles();
     await ensurePetVaccines();
     await ensureVeterinaryData();
     await ensureOrdersAndMessages();
@@ -1208,6 +1227,7 @@ async function seedMissing() {
       dossiers: await prisma.petMedicalDossier.count(),
       diseases: await prisma.disease.count(),
       medications: await prisma.vetMedication.count(),
+      blogArticles: await prisma.blogArticle.count(),
     };
     console.log('📊 Current counts:', counts);
     console.log('✅ Done — missing data filled where needed.');

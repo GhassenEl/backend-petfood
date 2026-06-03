@@ -625,3 +625,21 @@ model MedicalDossierEntry {
 
   @@index([dossierId, visitDate])
 }
+
+/// Article de blog nutrition — publié par l'admin, lu par les clients
+model BlogArticle {
+  id        String   @id @default(uuid())
+  title     String
+  category  String   @default("Guide")
+  excerpt   String
+  body      String
+  readMin   Int      @default(5)
+  isPublished Boolean @default(true)
+  publishedAt DateTime @default(now())
+  authorId  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isPublished, publishedAt])
+  @@index([category])
+}
