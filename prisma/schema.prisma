@@ -231,21 +231,26 @@ model Review {
 }
 
 model ServiceRating {
-  id            String   @id @default(uuid())
-  userId        String
-  type          String
-  rating        Int
-  comment       String?
-  region        String?
-  orderId       String?
-  appointmentId String?
-  targetUserId  String?
-  createdAt     DateTime @default(now())
-  user          User     @relation(fields: [userId], references: [id])
-  order         Order?   @relation(fields: [orderId], references: [id])
+  id             String   @id @default(uuid())
+  userId         String
+  type           String
+  rating         Int
+  comment        String?
+  emotion        String   @default("neutral")
+  sentimentScore Float?
+  aiSuggested    Boolean  @default(false)
+  region         String?
+  orderId        String?
+  appointmentId  String?
+  bookingId      String?
+  targetUserId   String?
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id])
+  order          Order?   @relation(fields: [orderId], references: [id])
 
   @@unique([userId, orderId])
   @@unique([userId, appointmentId])
+  @@unique([userId, bookingId])
 }
 
 model ProductFavorite {

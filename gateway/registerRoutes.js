@@ -38,6 +38,7 @@ function registerGatewayRoutes(app) {
   app.use('/api/auth', require('../routes/auth.routes'));
   app.use('/api/reviews', require('../routes/reviews.routes'));
   app.use('/api/service-ratings', require('../routes/serviceRatings.routes'));
+  app.use('/api/owner-emotions', require('../routes/ownerEmotions.routes'));
   app.use('/api/favorites', require('../routes/favorites.routes'));
   app.use('/api/loyalty', require('../routes/loyalty.routes'));
   app.use('/api/complaints', require('../routes/complaints.routes'));

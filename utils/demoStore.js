@@ -569,6 +569,11 @@ const getEligibleServiceRatings = (user) => {
       .filter((r) => r.userId._id === user._id && r.type === 'delivery')
       .map((r) => r.orderId)
   );
+  const ratedBookingIds = new Set(
+    store.serviceRatings
+      .filter((r) => r.userId._id === user._id && r.bookingId)
+      .map((r) => r.bookingId)
+  );
   return {
     delivery: orders.filter((o) => !ratedOrderIds.has(o.orderId)),
     veterinary: [
@@ -586,6 +591,29 @@ const getEligibleServiceRatings = (user) => {
           (r) => r.userId._id === user._id && r.appointmentId === a.appointmentId
         )
     ),
+    grooming: [
+      {
+        bookingId: 'demo_svc_groom_1',
+        petName: 'Rex',
+        animalType: 'dog',
+        serviceType: 'grooming',
+        date: now(),
+        price: 45,
+        title: 'Toilettage — Rex',
+      },
+    ].filter((b) => !ratedBookingIds.has(b.bookingId)),
+    boarding: [],
+    training: [
+      {
+        bookingId: 'demo_svc_train_1',
+        petName: 'Rex',
+        animalType: 'dog',
+        serviceType: 'training',
+        date: now(),
+        price: 60,
+        title: 'Dressage — Rex',
+      },
+    ].filter((b) => !ratedBookingIds.has(b.bookingId)),
   };
 };
 
@@ -597,14 +625,91 @@ const createServiceRating = (user, payload) => {
     type: payload.type,
     rating: Number(payload.rating || 5),
     comment: payload.comment || '',
+    emotion: payload.emotion || 'satisfied',
+    sentimentScore: payload.sentimentScore ?? null,
+    aiSuggested: Boolean(payload.aiSuggested),
     region: payload.region || user.region || 'Tunis',
     orderId: payload.orderId || null,
     appointmentId: payload.appointmentId || null,
+    bookingId: payload.bookingId || null,
     targetUserId: payload.targetUserId || null,
     createdAt: now(),
   };
   store.serviceRatings.unshift(rating);
   return clone(rating);
+};
+
+const getOwnerEmotionDashboard = (user) => {
+  const ratings = getServiceRatings(user);
+  const reviews = getReviews(user);
+  const entries = [
+    ...ratings.map((r) => ({
+      id: r.id || r._id,
+      source: 'service_rating',
+      type: r.type,
+      serviceType: r.type,
+      rating: r.rating,
+      emotion: r.emotion || 'neutral',
+      comment: r.comment,
+      createdAt: r.createdAt,
+      label: r.type,
+    })),
+    ...reviews.map((r) => ({
+      id: r.id || r._id,
+      source: 'product_review',
+      type: 'products',
+      serviceType: 'products',
+      rating: r.rating,
+      emotion: r.emotion || 'neutral',
+      comment: r.comment,
+      createdAt: r.createdAt,
+      label: r.product?.name || 'Produit',
+    })),
+  ];
+  const serviceTypes = ['grooming', 'boarding', 'training', 'delivery', 'veterinary', 'products'];
+  const breakdown = serviceTypes.map((type) => {
+    const rows = entries.filter((e) => e.serviceType === type);
+    return {
+      type,
+      label: type,
+      icon: '🐾',
+      count: rows.length,
+      moodScore: rows.length ? 0.5 : 0,
+      dominantEmotion: rows[0]?.emotion || 'neutral',
+      emotions: [],
+    };
+  });
+  return {
+    role: 'client',
+    agent: 'owner_emotion_analysis',
+    globalMood: entries.length ? 0.45 : 0,
+    globalMoodLabel: entries.length ? 'Plutôt satisfait' : 'Neutre',
+    totalFeedbacks: entries.length,
+    serviceBreakdown: breakdown,
+    recentFeedbacks: entries.slice(0, 10),
+    positiveServices: [],
+    needsAttention: [],
+    recommendations: [
+      { type: 'feedback', label: 'Noter un service après votre visite', link: '/client-emotions' },
+      { type: 'try', label: 'Réserver toilettage ou dressage', link: '/client-services' },
+    ],
+    summary: 'Mode démo — exprimez votre ressenti sur chaque service PetfoodTN.',
+    emotionsCatalog: [
+      { id: 'happy', label: 'Très heureux', emoji: '😊' },
+      { id: 'satisfied', label: 'Satisfait', emoji: '🙂' },
+      { id: 'neutral', label: 'Neutre', emoji: '😐' },
+      { id: 'disappointed', label: 'Déçu', emoji: '😞' },
+      { id: 'frustrated', label: 'Frustré', emoji: '😠' },
+    ],
+    platformServices: [
+      { type: 'grooming', label: 'Toilettage', icon: '✂️' },
+      { type: 'boarding', label: 'Pension', icon: '🏠' },
+      { type: 'training', label: 'Dressage', icon: '🎓' },
+      { type: 'delivery', label: 'Livraison', icon: '🚚' },
+      { type: 'veterinary', label: 'Vétérinaire', icon: '🩺' },
+      { type: 'products', label: 'Produits boutique', icon: '🛒' },
+    ],
+  };
 };
 
 const getServiceRatingStats = (type = 'delivery') => {
@@ -960,6 +1065,7 @@ module.exports = {
   createServiceRating,
   getServiceRatingStats,
   deleteServiceRating,
+  getOwnerEmotionDashboard,
   getComplaints,
   createComplaint,
   updateComplaint,

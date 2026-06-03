@@ -1,4 +1,6 @@
 const { prisma } = require('../prismaClient');
+const { RATING_SERVICE_TYPES } = require('../utils/ownerEmotionConstants');
+const { analyzeOwnerEmotionText } = require('./ownerEmotionAnalysis.service');
 
 const resolveOwnerId = (value) => {
   if (value == null) return null;
@@ -22,7 +24,7 @@ const getRatingsForUser = async (user) => {
 };
 
 const getEligibleTargets = async (userId) => {
-  const [deliveredOrders, pastAppointments, existing] = await Promise.all([
+  const [deliveredOrders, pastAppointments, existing, pastServiceAppointments] = await Promise.all([
     prisma.order.findMany({
       where: { userId, status: 'delivered' },
       orderBy: { deliveredAt: 'desc' },
@@ -38,6 +40,7 @@ const getEligibleTargets = async (userId) => {
     prisma.petAppointment.findMany({
       where: {
         ownerId: userId,
+        category: { not: 'service' },
         status: { in: ['completed', 'confirmed'] },
         date: { lte: new Date() },
       },
@@ -55,12 +58,54 @@ const getEligibleTargets = async (userId) => {
     }),
     prisma.serviceRating.findMany({
       where: { userId },
-      select: { orderId: true, appointmentId: true },
+      select: { orderId: true, appointmentId: true, bookingId: true },
+    }),
+    prisma.petAppointment.findMany({
+      where: {
+        ownerId: userId,
+        category: 'service',
+        status: { in: ['completed', 'confirmed'] },
+        date: { lte: new Date() },
+      },
+      orderBy: { date: 'desc' },
+      select: {
+        id: true,
+        petName: true,
+        animalType: true,
+        type: true,
+        date: true,
+        status: true,
+        price: true,
+        title: true,
+      },
     }),
   ]);
 
   const ratedOrders = new Set(existing.map((r) => r.orderId).filter(Boolean));
   const ratedAppts = new Set(existing.map((r) => r.appointmentId).filter(Boolean));
+  const ratedBookings = new Set(existing.map((r) => r.bookingId).filter(Boolean));
+
+  const mapServiceBooking = (a) => ({
+    bookingId: a.id,
+    petName: a.petName,
+    animalType: a.animalType,
+    serviceType: a.type,
+    date: a.date,
+    status: a.status,
+    price: a.price,
+    title: a.title,
+  });
+
+  const serviceBookings = pastServiceAppointments || [];
+  const grooming = serviceBookings
+    .filter((a) => a.type === 'grooming' && !ratedBookings.has(a.id))
+    .map(mapServiceBooking);
+  const boarding = serviceBookings
+    .filter((a) => a.type === 'boarding' && !ratedBookings.has(a.id))
+    .map(mapServiceBooking);
+  const training = serviceBookings
+    .filter((a) => a.type === 'training' && !ratedBookings.has(a.id))
+    .map(mapServiceBooking);
 
   return {
     delivery: deliveredOrders
@@ -83,6 +128,9 @@ const getEligibleTargets = async (userId) => {
         vetId: a.vetId,
         vetName: a.vet?.name || null,
       })),
+    grooming,
+    boarding,
+    training,
   };
 };
 
@@ -91,10 +139,27 @@ const createRating = async (user, payload) => {
   const type = String(payload.type || '').toLowerCase();
   const rating = clampRating(payload.rating);
 
-  if (!['veterinary', 'delivery'].includes(type)) {
-    const error = new Error('Type invalide (veterinary ou delivery)');
+  if (!RATING_SERVICE_TYPES.includes(type)) {
+    const error = new Error(`Type invalide (${RATING_SERVICE_TYPES.join(', ')})`);
     error.status = 400;
     throw error;
+  }
+
+  let emotion = payload.emotion || 'neutral';
+  let sentimentScore = null;
+  let aiSuggested = Boolean(payload.aiSuggested);
+
+  if (payload.comment?.trim()) {
+    const analysis = await analyzeOwnerEmotionText({
+      text: payload.comment,
+      serviceType: type,
+      rating,
+    });
+    if (!payload.emotion || payload.aiSuggested) {
+      emotion = analysis.emotion;
+      aiSuggested = true;
+    }
+    sentimentScore = analysis.confidence ?? null;
   }
   if (rating < 1 || rating > 5) {
     const error = new Error('La note doit être entre 1 et 5');
@@ -105,6 +170,7 @@ const createRating = async (user, payload) => {
   let region = payload.region || null;
   let orderId = null;
   let appointmentId = null;
+  let bookingId = null;
   let targetUserId = null;
 
   if (type === 'delivery') {
@@ -154,15 +220,44 @@ const createRating = async (user, payload) => {
     region = region || appt.vet?.region || null;
   }
 
+  if (['grooming', 'boarding', 'training'].includes(type)) {
+    bookingId = payload.bookingId;
+    if (!bookingId) {
+      const error = new Error('bookingId requis pour noter ce service');
+      error.status = 400;
+      throw error;
+    }
+    const booking = await prisma.petAppointment.findUnique({ where: { id: bookingId } });
+    if (
+      !booking ||
+      String(booking.ownerId) !== String(userId) ||
+      booking.category !== 'service' ||
+      booking.type !== type
+    ) {
+      const error = new Error('Réservation service introuvable');
+      error.status = 404;
+      throw error;
+    }
+    if (!['completed', 'confirmed'].includes(booking.status)) {
+      const error = new Error('Ce service ne peut pas encore être noté');
+      error.status = 400;
+      throw error;
+    }
+  }
+
   return prisma.serviceRating.create({
     data: {
       userId,
       type,
       rating,
       comment: payload.comment?.trim() || null,
+      emotion,
+      sentimentScore,
+      aiSuggested,
       region,
       orderId,
       appointmentId,
+      bookingId,
       targetUserId,
     },
     include: {
