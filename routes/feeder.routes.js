@@ -1,6 +1,7 @@
 const express = require('express');
 const { auth } = require('../middleware/auth');
 const feederDeviceAuth = require('../middleware/feederDeviceAuth');
+const feederVpnGate = require('../middleware/feederVpnGate');
 const {
   getMyFeeders,
   registerFeeder,
@@ -28,11 +29,11 @@ const {
 
 const router = express.Router();
 
-// ESP32 — authentification par clé appareil
-router.post('/device/heartbeat', feederDeviceAuth, deviceHeartbeat);
-router.get('/device/commands', feederDeviceAuth, devicePollCommands);
-router.post('/device/ack', feederDeviceAuth, deviceAckCommand);
-router.post('/device/event', feederDeviceAuth, deviceEvent);
+// ESP32 — VPN optionnel + authentification par clé appareil
+router.post('/device/heartbeat', feederVpnGate, feederDeviceAuth, deviceHeartbeat);
+router.get('/device/commands', feederVpnGate, feederDeviceAuth, devicePollCommands);
+router.post('/device/ack', feederVpnGate, feederDeviceAuth, deviceAckCommand);
+router.post('/device/event', feederVpnGate, feederDeviceAuth, deviceEvent);
 
 // Application web — JWT
 router.get('/firebase/status', auth, getFirebaseConfig);
