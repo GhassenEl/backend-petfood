@@ -56,6 +56,7 @@ function registerGatewayRoutes(app) {
   app.use('/api/payments', require('../routes/payments.routes'));
   app.use('/api/ai', require('../routes/ai.routes'));
   app.use('/api/ml', require('../routes/ml.routes'));
+  app.use('/api/analytics', require('../routes/analytics.routes'));
   app.use('/api/leave-requests', require('../routes/leave.routes'));
   app.use('/api/promotions', require('../routes/promotions.routes'));
   app.use('/api/wallet', require('../routes/wallet.routes'));
