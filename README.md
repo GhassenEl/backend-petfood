@@ -7,7 +7,7 @@ Front-end repo: https://github.com/GhassenEl/frontend-petfood
 ## Stack
 
 - Node.js + Express
-- Prisma + SQLite via @prisma/client
+- Prisma + PostgreSQL (Docker) via @prisma/client
 - JWT authentication
 - bcryptjs for password hashing
 - Stripe (optional)
@@ -18,10 +18,13 @@ Front-end repo: https://github.com/GhassenEl/frontend-petfood
 ```bash
 npm install
 cp .env.example .env
-# edit .env with a strong JWT_SECRET and optional DEMO_MODE
-npm run seed    # populates demo products/orders/messages if users already exist
-npm run dev     # nodemon on http://localhost:5002
+# DATABASE_URL PostgreSQL — voir docs/POSTGRES.md
+npm run db:setup   # docker + prisma db push + seed (recommandé)
+# ou : npm run postgres:up && npm run db:push && npm run seed
+npm run dev        # nodemon on http://localhost:5002
 ```
+
+Guide détaillé : [docs/POSTGRES.md](./docs/POSTGRES.md)
 
 > The auth controller now uses Prisma and SQL. Demo-mode fallback still works when the database is unavailable.
 
@@ -34,7 +37,9 @@ backend/
 ├── prisma/         # Prisma schema and generated client
 ├── routes/         # API route definitions
 ├── utils/          # demoStore fallback, helpers
-├── seed.js         # SQLite/Prisma seeder
+├── seed.js         # seed principal (comptes, produits, commandes, blog)
+├── docker-compose.yml
+├── docs/POSTGRES.md
 └── server.js       # entry point
 ```
 

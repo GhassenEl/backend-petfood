@@ -1,5 +1,14 @@
-const bcrypt = require('bcryptjs');
+/**
+ * Seed principal PetfoodTN — PostgreSQL (recommandé) ou SQLite.
+ *
+ * Usage :
+ *   npm run db:setup     # docker + push + seed
+ *   npm run seed         # seed seul (vide puis remplit)
+ *   SEED_SKIP_RESET=1 npm run seed   # sans vider les tables
+ */
 const { prisma, connectDB } = require('./prismaClient');
+const { resetDatabase, isPostgres } = require('./utils/seedReset');
+const { ensureDemoUsers, ensureDemoPets } = require('./utils/seedUsers');
 const {
   generateOrders,
   generateMessages,
@@ -9,55 +18,65 @@ const {
   createPetAppointments,
   createPetVaccines,
 } = require('./utils/demoData');
+const { defaultBlogArticles } = require('./utils/defaultBlogArticles');
 
+const mapProductRow = (product) => ({
+  id: product._id,
+  name: product.name,
+  price: Number(product.price || 0),
+  discount: Number(product.discount || 0),
+  discountPrice: product.discountPrice != null ? Number(product.discountPrice) : undefined,
+  imageUrl: product.imageUrl || product.image || '',
+  description: product.description || '',
+  category: product.category || 'nourriture',
+  animalType: product.animalType || 'other',
+  popularity: Number(product.popularity || 0),
+  rating_avg: Number(product.rating_avg || 0),
+  rating_count: Number(product.rating_count || 0),
+  stock: Number(product.stock ?? 50),
+  tags: product.tags || [],
+  stockHistory: product.stockHistory || [],
+});
 
+const seedBlogArticles = async () => {
+  const count = await prisma.blogArticle.count();
+  if (count > 0) {
+    console.log(`ℹ️  ${count} article(s) blog déjà présents`);
+    return;
+  }
+  for (let i = 0; i < defaultBlogArticles.length; i += 1) {
+    const article = defaultBlogArticles[i];
+    const publishedAt = new Date();
+    publishedAt.setDate(publishedAt.getDate() - i * 14);
+    await prisma.blogArticle.create({
+      data: {
+        ...article,
+        isPublished: true,
+        publishedAt,
+      },
+    });
+  }
+  console.log(`✅ ${defaultBlogArticles.length} article(s) blog créés`);
+};
 
-
-
-/**
- * Seed minimal demo data.
- */
 const seedData = async () => {
   try {
     await connectDB();
-    console.log('🧹 Clearing existing data...');
+    console.log(`🌱 Seed PetfoodTN (${isPostgres() ? 'PostgreSQL' : 'SQLite'})`);
 
-    await Promise.all([
-      prisma.message.deleteMany(),
-      prisma.orderItem.deleteMany(),
-      prisma.order.deleteMany(),
-      prisma.product.deleteMany(),
-      prisma.chatMessage.deleteMany(),
-      prisma.invoice.deleteMany(),
-      prisma.review.deleteMany(),
-      prisma.complaint.deleteMany(),
+    if (process.env.SEED_SKIP_RESET !== '1') {
+      await resetDatabase();
+    } else {
+      console.log('ℹ️  SEED_SKIP_RESET=1 — tables non vidées');
+    }
 
-      // Veterinary
-      prisma.veterinaryContactRequest.deleteMany(),
-      prisma.petAppointment.deleteMany(),
-      prisma.petVaccine.deleteMany(),
-      prisma.veterinaryRecord.deleteMany(),
-    ]);
+    await ensureDemoUsers();
+    await ensureDemoPets();
 
-    console.log('📦 Creating products...');
-    const productData = demoProducts.map((product) => ({
-      id: product._id,
-      name: product.name,
-      price: Number(product.price || 0),
-      discount: Number(product.discount || 0),
-      imageUrl: product.imageUrl || '',
-      category: product.category || 'nourriture',
-      animalType: product.animalType || 'other',
-      popularity: Number(product.popularity || 0),
-      rating_avg: Number(product.rating_avg || 0),
-      rating_count: Number(product.rating_count || 0),
-      stock: Number(product.stock || 0),
-      tags: product.tags || [],
-      stockHistory: product.stockHistory || [],
-    }));
-
-    await prisma.product.createMany({ data: productData });
-    console.log(`✅ ${demoProducts.length} products created`);
+    console.log('📦 Création des produits…');
+    const productRows = demoProducts.map(mapProductRow);
+    await prisma.product.createMany({ data: productRows });
+    console.log(`✅ ${productRows.length} produits`);
 
     const clientUsers = await prisma.user.findMany({
       where: { role: 'client' },
@@ -65,16 +84,17 @@ const seedData = async () => {
     });
 
     if (!clientUsers.length) {
-      console.log(' No client users found. Skipping veterinary seeding.');
+      console.log('⚠️ Aucun client — fin du seed.');
       await prisma.$disconnect();
       return;
     }
 
-    const clientUser = clientUsers[0];
+    const primaryClient = clientUsers[0];
 
-    // Create veterinary contact requests (more data)
-    const contactRequests = createVeterinaryContactRequests({ ownerId: clientUser.id, count: 120 });
-
+    const contactRequests = createVeterinaryContactRequests({
+      ownerId: primaryClient.id,
+      count: 40,
+    });
     await prisma.veterinaryContactRequest.createMany({
       data: contactRequests.map((r) => ({
         ownerId: r.ownerId,
@@ -87,10 +107,9 @@ const seedData = async () => {
         createdAt: new Date(r.createdAt || Date.now()),
       })),
     });
+    console.log(`✅ ${contactRequests.length} demandes vétérinaires`);
 
-    // Create veterinary records (history) (more data)
-    const vetRecords = createVeterinaryRecords({ ownerId: clientUser.id, count: 160 });
-
+    const vetRecords = createVeterinaryRecords({ ownerId: primaryClient.id, count: 60 });
     await prisma.veterinaryRecord.createMany({
       data: vetRecords.map((r) => ({
         ownerId: r.ownerId,
@@ -109,92 +128,18 @@ const seedData = async () => {
         updatedAt: r.visitDate,
       })),
     });
+    console.log(`✅ ${vetRecords.length} fiches vétérinaires`);
 
-    // (legacy hardcoded vetRecords removed)
-
-    /*
-    const vetRecords = [
-      {
-        ownerId: clientUser.id,
-        petName: 'Rex',
-        animalType: 'dog',
-        visitDate: new Date(Date.now() - 18 * 24 * 60 * 60 * 1000),
-        diagnosis: 'Gastro-entérite légère',
-        treatment: 'Hydratation + diète 24-48h, puis transition progressive.',
-        vetNotes: 'Revoir si symptômes persistent > 48h.',
-        nextVisit: new Date(Date.now() - 18 * 24 * 60 * 60 * 1000 + 21 * 24 * 60 * 60 * 1000),
-        weight: 18.4,
-        temperature: 38.7,
-        medications: JSON.stringify([
-          { name: 'Probiotiques', dosage: '1 gélule', frequency: '1x/j' },
-        ]),
-        status: 'active',
-      },
-      {
-        ownerId: clientUser.id,
-        petName: 'Rex',
-        animalType: 'dog',
-        visitDate: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000),
-        diagnosis: 'Amélioration - contrôle digestion',
-        treatment: 'Poursuite alimentation digestive, contrôle selles.',
-        vetNotes: 'Transition croquettes achevée.',
-        nextVisit: new Date(Date.now() + 12 * 24 * 60 * 60 * 1000),
-        weight: 18.9,
-        temperature: 38.3,
-        medications: JSON.stringify([
-          { name: 'Complément fibres', dosage: '1 dose', frequency: '1x/j' },
-        ]),
-        status: 'active',
-      },
-      {
-        ownerId: clientUser.id,
-        petName: 'Mimi',
-        animalType: 'cat',
-        visitDate: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
-        diagnosis: 'Intolérance légère à la transition',
-        treatment: 'Retour à l’aliment stable + transition plus lente.',
-        vetNotes: 'Surveiller appétit + hydratation.',
-        nextVisit: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000),
-        weight: 4.2,
-        temperature: 38.6,
-        medications: JSON.stringify([
-          { name: 'Probiotiques', dosage: '1 dose', frequency: '1x/j' },
-        ]),
-        status: 'active',
-      },
-      {
-        ownerId: clientUser.id,
-        petName: 'Luna',
-        animalType: 'rabbit',
-        visitDate: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
-        diagnosis: 'Baisse d’appétit (suspect digestif)',
-        treatment: 'Contrôle foin + hydratation + surveillance.',
-        vetNotes: 'Si reprise faible, prévoir recontrôle.',
-        nextVisit: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        weight: 1.8,
-        temperature: 38.4,
-        medications: JSON.stringify([
-          { name: 'Support digestion', dosage: '1 seringue', frequency: '2x/j' },
-        ]),
-        status: 'active',
-      },
-    ];
-
-    */
-
-    // Create pet appointments (more data)
-    // IMPORTANT: seed RDVs for ALL demo clients so that /veterinary/appointments works for any client account.
-    const appointmentsPerClient = clientUsers.map((u) => ({ ownerId: u.id, count: 20 }));
-    const allAppointments = appointmentsPerClient.flatMap(({ ownerId, count }) =>
-      createPetAppointments({ ownerId, count })
+    const allAppointments = clientUsers.flatMap((u) =>
+      createPetAppointments({ ownerId: u.id, count: 12 })
     );
-
     await prisma.petAppointment.createMany({
       data: allAppointments.map((a) => ({
         ownerId: a.ownerId,
         petName: a.petName,
         animalType: a.animalType,
         type: a.type,
+        category: a.category || 'vet',
         date: a.date,
         status: a.status,
         notes: a.notes,
@@ -204,8 +149,9 @@ const seedData = async () => {
         updatedAt: a.date,
       })),
     });
+    console.log(`✅ ${allAppointments.length} rendez-vous`);
 
-    const allVaccines = clientUsers.flatMap((u) => createPetVaccines({ ownerId: u.id, count: 18 }));
+    const allVaccines = clientUsers.flatMap((u) => createPetVaccines({ ownerId: u.id, count: 10 }));
     await prisma.petVaccine.createMany({
       data: allVaccines.map((v) => ({
         ownerId: v.ownerId,
@@ -220,125 +166,80 @@ const seedData = async () => {
         status: v.status,
       })),
     });
-    console.log(`✅ ${allVaccines.length} pet vaccines created`);
+    console.log(`✅ ${allVaccines.length} vaccins`);
 
+    await seedBlogArticles();
 
-    /*
-    // legacy hardcoded appointments removed
+    const orderClient =
+      clientUsers.find((u) => u.email === 'client@petfood.tn') || clientUsers[0];
+    const livreur = await prisma.user.findFirst({ where: { role: 'livreur' } });
 
-    const upcomingBase = Date.now();
-    const appointments = [
-      {
-        ownerId: clientUser.id,
-        petName: 'Rex',
-        animalType: 'dog',
-        type: 'veterinary_consultation',
-        date: new Date(upcomingBase + 3 * 24 * 60 * 60 * 1000 + 9 * 60 * 60 * 1000),
-        status: 'scheduled',
-        notes: 'Contrôle digestion + suivi croquettes.',
-        reminderSent: false,
-      },
-      {
-        ownerId: clientUser.id,
-        petName: 'Mimi',
-        animalType: 'cat',
-        type: 'veterinary_consultation',
-        date: new Date(upcomingBase + 6 * 24 * 60 * 60 * 1000 + 14 * 60 * 60 * 1000),
-        status: 'scheduled',
-        notes: 'Transition alimentation + check ballonnements.',
-        reminderSent: false,
-      },
-      {
-        ownerId: clientUser.id,
-        petName: 'Luna',
-        animalType: 'rabbit',
-        type: 'veterinary_consultation',
-        date: new Date(upcomingBase - 10 * 24 * 60 * 60 * 1000 + 10 * 60 * 60 * 1000),
-        status: 'confirmed',
-        notes: 'Première consultation, suivi reprise appétit.',
-        reminderSent: true,
-      },
-    ];
-
-    await prisma.petAppointment.createMany({
-      data: appointments.map((a) => ({
-        ownerId: a.ownerId,
-        petName: a.petName,
-        animalType: a.animalType,
-        type: a.type,
-        date: a.date,
-        status: a.status,
-        notes: a.notes,
-        reminderSent: Boolean(a.reminderSent),
-        createdAt: a.date,
-        updatedAt: a.date,
-      })),
-    });
-
-    */
-
-    // Existing (products/orders/messages) seeding
-    const usersCount = await prisma.user.count();
-    if (usersCount === 0) {
-      console.log(' No users found after creating demo accounts. Skipping orders/messages seeding.');
-      await prisma.$disconnect();
-      return;
-    }
-
-    const anyUser = await prisma.user.findFirst({
-      where: { role: { in: ['livreur', 'client', 'admin'] } }
-    });
-    if (!anyUser) {
-      console.log('ℹ️ No compatible user found. Skipping orders/messages seeding.');
-      await prisma.$disconnect();
-      return;
-    }
-
-    console.log('🛒 Creating orders...');
+    console.log('🛒 Création des commandes…');
     const orders = generateOrders(50);
+    let orderCount = 0;
     for (const order of orders) {
-      const items = order.items.map((item) => ({
-        productId: item.productId._id,
-        quantity: Number(item.quantity),
-        price: Number(item.price),
-      }));
+      const items = order.items
+        .map((item) => ({
+          productId: item.productId?._id || item.productId,
+          quantity: Number(item.quantity),
+          price: Number(item.price),
+        }))
+        .filter((item) => item.productId);
+
+      if (!items.length) continue;
+
       await prisma.order.create({
         data: {
-          userId: anyUser.id,
+          userId: orderClient.id,
           total: Number(order.total),
           status: order.status,
-          paymentMethod: order.paymentMethod,
+          paymentMethod: order.paymentMethod || 'cash',
           address: order.address,
           phone: order.phone,
+          region: orderClient.region || null,
           deliveryLocation: order.deliveryLocation || {},
+          assignedLivreurId:
+            order.status !== 'pending' && livreur ? livreur.id : null,
           createdAt: new Date(order.createdAt),
           updatedAt: new Date(order.updatedAt || order.createdAt),
-          items: {
-            create: items,
-          },
+          items: { create: items },
         },
       });
+      orderCount += 1;
     }
-    console.log(`✅ ${orders.length} orders created`);
+    console.log(`✅ ${orderCount} commandes`);
 
-    console.log('💬 Creating messages...');
+    console.log('💬 Création des messages…');
     const messages = generateMessages();
-    const messageInserts = messages.map((msg) => ({
-      senderType: msg.sender.type,
-      senderId: msg.sender.userId,
-      receiverType: msg.receiver.type,
-      receiverId: msg.receiver.userId,
-      orderId: msg.orderId || null,
-      message: msg.message,
-      isRead: Boolean(msg.isRead),
-      createdAt: new Date(msg.createdAt),
-      updatedAt: msg.updatedAt ? new Date(msg.updatedAt) : new Date(msg.createdAt),
-    }));
-    await prisma.message.createMany({ data: messageInserts });
-    console.log(`✅ ${messages.length} messages created`);
+    const messageInserts = messages
+      .map((msg) => ({
+        senderType: msg.sender?.type || 'client',
+        senderId: msg.sender?.userId || orderClient.id,
+        receiverType: msg.receiver?.type || 'admin',
+        receiverId: msg.receiver?.userId || orderClient.id,
+        orderId: msg.orderId || null,
+        message: msg.message,
+        isRead: Boolean(msg.isRead),
+        createdAt: new Date(msg.createdAt),
+        updatedAt: msg.updatedAt ? new Date(msg.updatedAt) : new Date(msg.createdAt),
+      }))
+      .filter((m) => m.senderId && m.receiverId);
 
-    console.log('✅ SEEDING COMPLETE.');
-    console.log('Restart backend and verify routes.');
+    if (messageInserts.length) {
+      await prisma.message.createMany({ data: messageInserts });
+    }
+    console.log(`✅ ${messageInserts.length} messages`);
+
+    const counts = {
+      users: await prisma.user.count(),
+      pets: await prisma.pet.count(),
+      products: await prisma.product.count(),
+      orders: await prisma.order.count(),
+      blogArticles: await prisma.blogArticle.count(),
+    };
+    console.log('📊 Totaux :', counts);
+    console.log('✅ Seed terminé. Comptes : client@petfood.tn / admin@petfood.tn / vet@petfood.tn / livreur@petfood.tn');
+    console.log('   Enrichissement optionnel : npm run seed:platform');
     await prisma.$disconnect();
   } catch (error) {
     console.error('❌ Seed error:', error);
@@ -348,5 +249,3 @@ const seedData = async () => {
 };
 
 seedData();
-
-

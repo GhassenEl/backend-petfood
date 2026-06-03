@@ -1,0 +1,25 @@
+# PostgreSQL local pour PetfoodTN
+# Démarrage : docker compose up -d
+# DATABASE_URL=postgresql://petfood:petfood@localhost:5432/petfoodtn?schema=public
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: petfoodtn-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: petfood
+      POSTGRES_PASSWORD: petfood
+      POSTGRES_DB: petfoodtn
+    ports:
+      - '5432:5432'
+    volumes:
+      - petfood_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U petfood -d petfoodtn']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  petfood_pgdata:
