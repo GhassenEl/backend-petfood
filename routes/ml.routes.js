@@ -13,6 +13,9 @@ const {
   getLivreurPack,
   getLivreurOrdersRisk,
   getVetPack,
+  getVetAgentPack,
+  getClinicAgentPack,
+  getPharmacyAgentPack,
 } = require('../controllers/mlPlatform.controller');
 
 const router = express.Router();
@@ -27,6 +30,9 @@ router.get('/admin/agent', auth, adminAuth, getAdminAgentPack);
 router.get('/livreur/pack', auth, livreurAuth, getLivreurPack);
 router.get('/livreur/orders-risk', auth, livreurAuth, getLivreurOrdersRisk);
 router.get('/vet/pack', auth, vetAuth, getVetPack);
+router.get('/vet/agent', auth, vetAuth, getVetAgentPack);
+router.get('/vet/clinic/agent', auth, vetAuth, getClinicAgentPack);
+router.get('/vet/pharmacy/agent', auth, vetAuth, getPharmacyAgentPack);
 router.get('/rank/senior-dog', auth, postSeniorDogRank);
 router.get('/orders/:orderId/cancel-risk', auth, adminAuth, getOrderRisk);
 

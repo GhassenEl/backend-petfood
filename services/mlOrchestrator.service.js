@@ -16,6 +16,50 @@ const { checkPythonMlHealth } = require('./mlPythonClient');
 
 const { getLifeStage } = require('./feederNutrition.service');
 
+const { completionWithSystem, VET_SYSTEM_PROMPT } = require('./groq.service');
+
+const { getClinicProfile, getClinicStats } = require('./clinic.service');
+
+const { getVetClinicalAlerts } = require('./clinicalAlerts.service');
+
+const { getMedicationCatalog, getLowStockAlerts } = require('./pharmacy.service');
+
+const { prisma, isDemoMode } = require('../prismaClient');
+
+const resolveVetId = (user) => String(user?.id || user?._id || '');
+
+const groqBrief = async (prompt, payload) => {
+  try {
+    const text = await completionWithSystem(
+      VET_SYSTEM_PROMPT,
+      `${prompt}\n\nDonnées:\n${JSON.stringify(payload, null, 2).slice(0, 3500)}`,
+      { max_tokens: 400 }
+    );
+    return text || null;
+  } catch {
+    return null;
+  }
+};
+
+const getVetUpcomingAppointments = async (vetId, limit = 8) => {
+  if (isDemoMode()) {
+    return [
+      { id: 'demo-appt-1', petName: 'Rex', date: new Date(Date.now() + 86400000).toISOString(), type: 'consultation', status: 'scheduled' },
+    ];
+  }
+  const now = new Date();
+  return prisma.petAppointment.findMany({
+    where: {
+      vetId,
+      date: { gte: now },
+      status: { in: ['scheduled', 'pending', 'confirmed'] },
+    },
+    orderBy: { date: 'asc' },
+    take: limit,
+    select: { id: true, petName: true, date: true, type: true, status: true },
+  });
+};
+
 
 
 const rankForPet = async (snapshot, userId, pet, limit = 6) => {
@@ -522,70 +566,246 @@ const getLivreurMlPack = async (user) => {
 
 
 
-const getVetMlPack = async (user) => {
-
+const getVetMlAgentPack = async (user) => {
+  const vetId = resolveVetId(user);
   const snapshot = await exportMlSnapshot();
-
-  const userId = String(user.id || user._id);
-
   const platform = await getPlatformInsights().catch(() => ({}));
+  const mlHealth = await checkPythonMlHealth().catch(() => ({ ok: false }));
 
-
-
-  const pets = snapshot.pets;
-
+  const pets = snapshot.pets || [];
   const speciesBreakdown = pets.reduce((acc, p) => {
-
     acc[p.type] = (acc[p.type] || 0) + 1;
-
     return acc;
-
   }, {});
 
-
-
   const seniorPets = pets.filter((p) => getLifeStage(p) === 'senior');
-
   const nutritionDemand = (platform.productDemand || []).filter(
+    (d) =>
+      !d.category ||
+      d.category === 'nourriture' ||
+      String(d.productName || '').toLowerCase().includes('croquette')
+  );
+  const animalSales = (snapshot.products || []).filter((p) => p.category === 'animaux').slice(0, 6);
 
-    (d) => !d.category || d.category === 'nourriture' || String(d.productName || '').toLowerCase().includes('croquette')
+  let seniorRankings = [];
+  if (platform.pythonPowered || mlHealth?.ok) {
+    for (const pet of seniorPets.slice(0, 3)) {
+      const items = await rankForPet(snapshot, pet.ownerId, pet, 4);
+      if (items?.length) {
+        seniorRankings.push({
+          pet: { id: pet.id, name: pet.name, type: pet.type },
+          items,
+        });
+      }
+    }
+  }
 
+  const ruleSummary = [
+    `${seniorPets.length} patient(s) senior sur la plateforme.`,
+    Object.keys(speciesBreakdown).length
+      ? `Espèces : ${Object.entries(speciesBreakdown)
+          .map(([k, v]) => `${k} (${v})`)
+          .join(', ')}.`
+      : '',
+    nutritionDemand[0] ? `Tendance nutrition : ${nutritionDemand[0].productName}.` : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const groqSummary = await groqBrief(
+    'Synthèse courte (4 phrases max) pour le vétérinaire : patients seniors, espèces et nutrition.',
+    { speciesBreakdown, seniorPetCount: seniorPets.length, nutritionDemand: nutritionDemand.slice(0, 4) }
   );
 
-
-
-  const animalSales = snapshot.products.filter((p) => p.category === 'animaux').slice(0, 5);
-
-
+  const actionHints = [
+    { type: 'diagnostics', label: 'Diagnostic IA patient', link: '/vet/diagnostics' },
+    { type: 'dossiers', label: 'Dossiers médicaux', link: '/vet/medical-dossiers' },
+    { type: 'calendar', label: 'Calendrier RDV', link: '/vet/calendar' },
+    { type: 'hub', label: 'Hub agents IA', link: '/vet/ml-agent' },
+  ];
 
   return {
-
     role: 'vet',
-
-    pythonPowered: Boolean(platform.pythonPowered),
-
-    models: platform.pythonPowered ? ['xgboost', 'senior_care', 'demand_forecast'] : ['clinical_rules'],
-
-    speciesBreakdown,
-
-    seniorPetCount: seniorPets.length,
-
-    seniorPetSamples: seniorPets.slice(0, 5).map((p) => ({ id: p.id, name: p.name, type: p.type })),
-
-    nutritionDemand: nutritionDemand.slice(0, 8),
-
-    adoptionCatalog: animalSales,
-
+    agent: 'vet_ml_agent',
+    pythonPowered: Boolean(platform.pythonPowered || mlHealth?.ok),
+    groqPowered: Boolean(groqSummary),
+    models: [
+      platform.pythonPowered || mlHealth?.ok ? 'xgboost' : null,
+      groqSummary ? 'groq' : null,
+      'senior_care',
+      'demand_forecast',
+      'clinical_rules',
+    ].filter(Boolean),
+    summary: groqSummary || ruleSummary,
     tip:
-
       seniorPets.length > 0
-
-        ? `${seniorPets.length} patient(s) senior — privilégiez aliments adaptés et suivi poids`
-
-        : 'Répartition espèces stable — consultez les tendances nutrition ci-dessous',
-
+        ? `${seniorPets.length} patient(s) senior — aliments adaptés et suivi poids recommandés`
+        : 'Consultez les tendances nutrition et le hub clinique / pharmacie',
+    speciesBreakdown,
+    seniorPetCount: seniorPets.length,
+    seniorPetSamples: seniorPets.slice(0, 6).map((p) => ({ id: p.id, name: p.name, type: p.type })),
+    seniorRankings,
+    nutritionDemand: nutritionDemand.slice(0, 8),
+    adoptionCatalog: animalSales,
+    actionHints,
   };
+};
 
+const getClinicMlAgentPack = async (user) => {
+  const vetId = resolveVetId(user);
+  const [clinic, stats, alerts, upcoming, platform, mlHealth] = await Promise.all([
+    getClinicProfile(vetId).catch(() => ({})),
+    getClinicStats(vetId).catch(() => ({})),
+    getVetClinicalAlerts(vetId).catch(() => []),
+    getVetUpcomingAppointments(vetId),
+    getPlatformInsights().catch(() => ({})),
+    checkPythonMlHealth().catch(() => ({ ok: false })),
+  ]);
+
+  const highAlerts = (alerts || []).filter((a) => a.severity === 'high');
+  const ruleSummary = [
+    clinic.clinicName ? `Cabinet : ${clinic.clinicName}.` : '',
+    stats.todayAppointments != null ? `${stats.todayAppointments} RDV aujourd'hui.` : '',
+    stats.vaccinesDueSoon != null ? `${stats.vaccinesDueSoon} rappel(s) vaccin sous 30 j.` : '',
+    highAlerts.length ? `${highAlerts.length} alerte(s) prioritaire(s).` : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const groqSummary = await groqBrief(
+    'Synthèse opérationnelle clinique (4 phrases) : planning, dossiers, vaccins, alertes.',
+    { clinic: { clinicName: clinic.clinicName, region: clinic.region }, stats, alerts: alerts.slice(0, 6) }
+  );
+
+  const actionHints = [
+    { type: 'calendar', label: 'Calendrier & RDV', link: '/vet/calendar' },
+    { type: 'dossiers', label: 'Dossiers médicaux', link: '/vet/medical-dossiers' },
+    { type: 'vaccines', label: 'Vaccinations', link: '/vet/vaccinations' },
+    { type: 'clinic', label: 'Profil clinique', link: '/vet/clinic' },
+    { type: 'contact', label: 'Demandes contact', link: '/vet/contact-requests' },
+  ];
+
+  return {
+    role: 'vet',
+    agent: 'clinic_ml_agent',
+    pythonPowered: Boolean(platform.pythonPowered || mlHealth?.ok),
+    groqPowered: Boolean(groqSummary),
+    models: ['clinical_rules', 'appointment_scoring', platform.pythonPowered ? 'xgboost' : null, groqSummary ? 'groq' : null].filter(Boolean),
+    summary: groqSummary || ruleSummary,
+    tip:
+      stats.vaccinesDueSoon > 0
+        ? `${stats.vaccinesDueSoon} rappel(s) vaccin à planifier`
+        : 'Planning stable — vérifiez les dossiers non signés',
+    clinic,
+    clinicStats: stats,
+    clinicalAlerts: alerts.slice(0, 12),
+    upcomingAppointments: upcoming.map((a) => ({
+      ...a,
+      dateLabel: a.date ? new Date(a.date).toLocaleString('fr-FR') : '',
+      link: `/vet/appointments/${a.id}`,
+    })),
+    alertCounts: {
+      total: alerts.length,
+      high: highAlerts.length,
+      stock: alerts.filter((a) => a.type === 'stock').length,
+      appointment: alerts.filter((a) => a.type === 'appointment').length,
+    },
+    actionHints,
+  };
+};
+
+const getPharmacyMlAgentPack = async (user) => {
+  const vetId = resolveVetId(user);
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+  const [catalog, lowStock, platform, mlHealth] = await Promise.all([
+    getMedicationCatalog().catch(() => []),
+    getLowStockAlerts().catch(() => []),
+    getPlatformInsights().catch(() => ({})),
+    checkPythonMlHealth().catch(() => ({ ok: false })),
+  ]);
+
+  let recentPrescriptions = 0;
+  let topMeds = [];
+  if (!isDemoMode() && vetId) {
+    recentPrescriptions = await prisma.prescription.count({
+      where: { vetId, createdAt: { gte: thirtyDaysAgo } },
+    });
+    const rxList = await prisma.prescription.findMany({
+      where: { vetId, createdAt: { gte: thirtyDaysAgo } },
+      select: { medications: true },
+      take: 50,
+    });
+    const freq = {};
+    for (const rx of rxList) {
+      const names = String(rx.medications || '')
+        .split(/[,;+]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      for (const n of names) {
+        freq[n] = (freq[n] || 0) + 1;
+      }
+    }
+    topMeds = Object.entries(freq)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([name, count]) => ({ name, count }));
+  } else {
+    recentPrescriptions = 12;
+    topMeds = [{ name: 'Amoxicilline', count: 5 }, { name: 'Carprofène', count: 3 }];
+  }
+
+  const criticalStock = lowStock.filter((m) => (m.stockQty ?? 0) === 0);
+  const ruleSummary = [
+    `${catalog.length} référence(s) en catalogue.`,
+    lowStock.length ? `${lowStock.length} alerte(s) stock bas.` : 'Stocks OK.',
+    recentPrescriptions ? `${recentPrescriptions} ordonnance(s) sur 30 j.` : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const groqSummary = await groqBrief(
+    'Synthèse pharmacie vétérinaire (4 phrases) : stocks critiques, réapprovisionnement, tendances prescriptions.',
+    { lowStock: lowStock.slice(0, 6), topMeds, recentPrescriptions }
+  );
+
+  const actionHints = [
+    { type: 'pharmacy', label: 'Stock pharmacie', link: '/vet/pharmacy' },
+    { type: 'rx', label: 'Ordonnances', link: '/vet/prescriptions' },
+    { type: 'bi', label: 'Import BI pharmacie', link: '/vet/bi' },
+    { type: 'diagnostics', label: 'Aide diagnostic', link: '/vet/diagnostics' },
+  ];
+
+  return {
+    role: 'vet',
+    agent: 'pharmacy_ml_agent',
+    pythonPowered: Boolean(platform.pythonPowered || mlHealth?.ok),
+    groqPowered: Boolean(groqSummary),
+    models: ['pharmacy_rules', 'dose_calculator', platform.pythonPowered ? 'xgboost' : null, groqSummary ? 'groq' : null].filter(Boolean),
+    summary: groqSummary || ruleSummary,
+    tip:
+      criticalStock.length > 0
+        ? `${criticalStock.length} médicament(s) en rupture — réapprovisionner`
+        : lowStock.length
+          ? `${lowStock.length} référence(s) sous seuil minimum`
+          : 'Stocks pharmacie dans les normes',
+    medicationCatalog: catalog.slice(0, 20),
+    lowStockAlerts: lowStock,
+    criticalStockCount: criticalStock.length,
+    recentPrescriptionsCount: recentPrescriptions,
+    topPrescribedMedications: topMeds,
+    stockKpis: {
+      totalSkus: catalog.length,
+      lowStock: lowStock.length,
+      outOfStock: criticalStock.length,
+    },
+    actionHints,
+  };
+};
+
+const getVetMlPack = async (user) => {
+  const pack = await getVetMlAgentPack(user);
+  return pack;
 };
 
 
@@ -637,6 +857,12 @@ module.exports = {
   getLivreurOrdersRiskMap,
 
   getVetMlPack,
+
+  getVetMlAgentPack,
+
+  getClinicMlAgentPack,
+
+  getPharmacyMlAgentPack,
 
   getAdminOrdersRiskMap,
 

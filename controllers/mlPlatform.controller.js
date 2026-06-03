@@ -11,6 +11,9 @@ const {
   getLivreurMlPack,
   getLivreurOrdersRiskMap,
   getVetMlPack,
+  getVetMlAgentPack,
+  getClinicMlAgentPack,
+  getPharmacyMlAgentPack,
   getAdminOrdersRiskMap,
 } = require('../services/mlOrchestrator.service');
 const { isDemoMode } = require('../prismaClient');
@@ -164,6 +167,33 @@ const getVetPack = async (req, res) => {
   }
 };
 
+const getVetAgentPack = async (req, res) => {
+  try {
+    const pack = await getVetMlAgentPack(resolveUser(req));
+    res.json(pack);
+  } catch (error) {
+    handleError(res, error);
+  }
+};
+
+const getClinicAgentPack = async (req, res) => {
+  try {
+    const pack = await getClinicMlAgentPack(resolveUser(req));
+    res.json(pack);
+  } catch (error) {
+    handleError(res, error);
+  }
+};
+
+const getPharmacyAgentPack = async (req, res) => {
+  try {
+    const pack = await getPharmacyMlAgentPack(resolveUser(req));
+    res.json(pack);
+  } catch (error) {
+    handleError(res, error);
+  }
+};
+
 const getLivreurOrdersRisk = async (req, res) => {
   try {
     const data = await getLivreurOrdersRiskMap(resolveUser(req));
@@ -186,4 +216,7 @@ module.exports = {
   getLivreurPack,
   getLivreurOrdersRisk,
   getVetPack,
+  getVetAgentPack,
+  getClinicAgentPack,
+  getPharmacyAgentPack,
 };
