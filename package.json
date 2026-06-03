@@ -14,8 +14,10 @@
     "db:push": "prisma db push",
     "db:setup": "node scripts/db-setup.js",
     "postgres:up": "docker compose up -d",
-    "postgres:down": "docker compose down"
-    "test:api": "node scripts/test-wallet-api.js"
+    "postgres:down": "docker compose down",
+    "test:api": "node scripts/test-wallet-api.js",
+    "test:ml": "node --test tests/ml-architectures.test.js",
+    "ml:benchmark": "node scripts/test-ml-models.js"
   },
   "dependencies": {
     "@prisma/client": "^5.14.1",

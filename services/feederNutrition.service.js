@@ -6,6 +6,8 @@ const DAILY_GRAMS_PER_KG = {
   bird: { young: 15, adult: 12, senior: 10 },
   fish: { young: 5, adult: 4, senior: 4 },
   rabbit: { young: 35, adult: 25, senior: 22 },
+  hamster: { young: 12, adult: 8, senior: 7 },
+  reptile: { young: 8, adult: 6, senior: 5 },
   other: { young: 30, adult: 22, senior: 20 },
 };
 

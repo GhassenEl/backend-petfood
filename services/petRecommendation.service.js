@@ -1,5 +1,6 @@
 const { prisma } = require('../prismaClient');
 const productRepository = require('../repositories/product.repository');
+const { rankSeniorDogProducts } = require('./mlPlatform.service');
 
 const PET_EMOJI = { dog: '🐕', cat: '🐈', bird: '🐦', fish: '🐟', rabbit: '🐰', other: '🐾' };
 
@@ -99,6 +100,11 @@ const scoreProductForPet = (product, pet, context, user, boughtIds, positiveIds)
   const reasons = [];
   const pTags = parseTags(product.tags);
   const hay = `${product.name} ${product.description || ''} ${pTags.join(' ')}`.toLowerCase();
+
+  if (product.category === 'animaux' && product.animalType === pet.type) {
+    score += 0.28;
+    reasons.push(`Adoption — ${pet.type} compatible avec ${pet.name}`);
+  }
 
   if (product.animalType === pet.type) {
     score += 0.35;
@@ -248,7 +254,7 @@ const getPetRecommendations = async (user, { petId, petName, limit = 8 } = {}) =
 
   const scoreForPet = async (pet) => {
     const context = await loadVetContextByPet(ownerIds, pet.name);
-    const scored = allProducts
+    let scored = allProducts
       .map((product) => {
         const result = scoreProductForPet(product, pet, context, profile, boughtIds, positiveIds);
         if (result.skip) return null;
@@ -262,9 +268,65 @@ const getPetRecommendations = async (user, { petId, petName, limit = 8 } = {}) =
           petType: pet.type,
         };
       })
-      .filter(Boolean)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit);
+      .filter(Boolean);
+
+    if (pet.type === 'dog' && getLifeStage(pet) === 'senior') {
+      try {
+        const mlRank = await rankSeniorDogProducts({
+          pet: {
+            id: pet.id,
+            ownerId: pet.ownerId || profile.id,
+            name: pet.name,
+            type: pet.type,
+            breed: pet.breed,
+            birthDate: pet.birthDate?.toISOString?.() || pet.birthDate,
+            weight: pet.weight,
+          },
+          products: allProducts.map((p) => ({
+            id: p.id,
+            name: p.name,
+            price: p.price,
+            category: p.category,
+            animalType: p.animalType,
+            tags: p.tags,
+            popularity: p.popularity,
+            rating_avg: p.rating_avg,
+            stock: p.stock,
+          })),
+          orders: orders.map((o) => ({
+            id: o.id,
+            userId: o.userId,
+            total: o.total,
+            status: o.status,
+            createdAt: o.createdAt?.toISOString?.() || o.createdAt,
+            items: o.items.map((it) => ({
+              productId: it.productId,
+              quantity: it.quantity,
+              price: it.price,
+            })),
+          })),
+          limit,
+        });
+        if (mlRank?.length) {
+          const boost = new Map(mlRank.map((r) => [r.productId, r.score]));
+          scored = scored.map((item) => {
+            const mlScore = boost.get(item.id);
+            if (mlScore == null) return item;
+            return {
+              ...item,
+              score: Math.min(1, item.score * 0.4 + mlScore * 0.6),
+              recommendedReason: mlRank.find((r) => r.productId === item.id)?.reasons?.[0] || item.recommendedReason,
+              mlBoosted: true,
+            };
+          });
+        }
+      } catch {
+        /* garde scoring classique */
+      }
+    }
+
+    scored.sort((a, b) => b.score - a.score);
+    scored = scored.slice(0, limit);
 
     return {
       pet: {

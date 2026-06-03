@@ -106,7 +106,12 @@ const getPetProductRecommendations = async (req, res) => {
     }
 
     const result = await getPetRecommendations(req.user, { petId, limit });
-    res.json(result);
+    const mlBoosted = Boolean(result?.recommendations?.some((r) => r.mlBoosted));
+    res.json({
+      ...result,
+      mlPowered: mlBoosted,
+      modelsUsed: mlBoosted ? ['xgboost', 'rules', 'groq'] : ['rules', 'groq'],
+    });
   } catch (error) {
     handleError(res, error);
   }

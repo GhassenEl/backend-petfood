@@ -1,5 +1,7 @@
 const { prisma } = require('../prismaClient');
 const { buildNutritionPlan } = require('./feederNutrition.service');
+const { SPECIES, gramsForPet } = require('../utils/animalSpecies');
+const { checkPythonMlHealth } = require('./mlPythonClient');
 
 const OFFLINE_MS = 15 * 60 * 1000;
 const RESERVOIR_FULL_CM = 30;
@@ -220,7 +222,52 @@ const getFeederInsights = async (feeder, ownerIds) => {
     insights.push({ type: 'live', icon: '👀', text: 'Animal détecté devant le distributeur en ce moment' });
   }
 
-  return { insights, plan, statsSummary: { todayGrams: stats.todayGrams, weekGrams: stats.weekGrams, dailyAverage: stats.dailyAverage } };
+  const speciesMeta = plan.pet
+    ? SPECIES.find((s) => s.id === plan.pet.type) || { id: plan.pet.type, label: plan.pet.type }
+    : null;
+  const suggestedPortion = plan.pet ? gramsForPet(plan.pet) : plan.portionGrams;
+
+  if (plan.pet && suggestedPortion && Math.abs(suggestedPortion - plan.portionGrams) >= 3) {
+    insights.push({
+      type: 'info',
+      icon: '🤖',
+      text: `Suggestion IA (${speciesMeta?.label || plan.pet.type}) : ${suggestedPortion} g par repas selon le poids`,
+    });
+  }
+
+  let mlPowered = false;
+  try {
+    const health = await checkPythonMlHealth();
+    mlPowered = Boolean(health?.ok);
+    if (mlPowered && plan.pet) {
+      insights.push({
+        type: 'ml',
+        icon: '🧠',
+        text: 'Modèles XGBoost actifs — tendances alimentation alignées avec la plateforme',
+      });
+    }
+  } catch {
+    mlPowered = false;
+  }
+
+  return {
+    insights,
+    plan,
+    mlPowered,
+    speciesGuide: plan.pet
+      ? {
+          type: plan.pet.type,
+          label: speciesMeta?.label || plan.pet.type,
+          suggestedPortionGrams: suggestedPortion,
+          dailyGrams: plan.dailyGrams,
+        }
+      : null,
+    statsSummary: {
+      todayGrams: stats.todayGrams,
+      weekGrams: stats.weekGrams,
+      dailyAverage: stats.dailyAverage,
+    },
+  };
 };
 
 const shouldLogLowFoodAlert = async (feederId) => {

@@ -26,29 +26,9 @@ const addWeeks = (key, n) => {
   return weekKey(d);
 };
 
-const linearRegression = (points) => {
-  const n = points.length;
-  if (n === 0) return { intercept: 0, slope: 0, r2: 0 };
-  if (n === 1) return { intercept: points[0].y, slope: 0, r2: 1 };
-
-  const sumX = points.reduce((s, p) => s + p.x, 0);
-  const sumY = points.reduce((s, p) => s + p.y, 0);
-  const sumXY = points.reduce((s, p) => s + p.x * p.y, 0);
-  const sumX2 = points.reduce((s, p) => s + p.x * p.x, 0);
-  const denom = n * sumX2 - sumX * sumX;
-  const slope = denom === 0 ? 0 : (n * sumXY - sumX * sumY) / denom;
-  const intercept = (sumY - slope * sumX) / n;
-
-  const meanY = sumY / n;
-  const ssTot = points.reduce((s, p) => s + (p.y - meanY) ** 2, 0);
-  const ssRes = points.reduce((s, p) => {
-    const pred = intercept + slope * p.x;
-    return s + (p.y - pred) ** 2;
-  }, 0);
-  const r2 = ssTot === 0 ? 1 : Math.max(0, 1 - ssRes / ssTot);
-
-  return { intercept, slope, r2 };
-};
+const { linearRegression } = require('../ml/regression');
+const { forecastWithAutoModel } = require('../ml/autoSelect');
+const { fetchPythonSalesForecast, isPythonMlEnabled } = require('./mlPythonClient');
 
 const computeMape = (points, intercept, slope) => {
   const valid = points.filter((p) => p.y > 0);
@@ -132,56 +112,52 @@ const fetchOrders = async (monthsBack) => {
 };
 
 const buildForecast = (history, horizon, granularity = 'monthly') => {
-  const points = history.map((h, i) => ({ x: i, y: h.revenue }));
-  const { intercept, slope, r2 } = linearRegression(points);
-  const mape = computeMape(points, intercept, slope);
-  const stdRes = (() => {
-    if (points.length < 2) return 0;
-    const residuals = points.map((p) => p.y - (intercept + slope * p.x));
-    const mean = residuals.reduce((a, b) => a + b, 0) / residuals.length;
-    const variance = residuals.reduce((s, r) => s + (r - mean) ** 2, 0) / residuals.length;
-    return Math.sqrt(variance);
-  })();
+  const series = history.map((h) => h.revenue);
+  const periodsAhead = granularity === 'weekly' ? horizon * 4 : horizon;
+  const auto = forecastWithAutoModel(series, periodsAhead);
+  const slope = auto.metrics.slopePerMonth ?? 0;
 
   const lastKey = history.length ? history[history.length - 1].month : monthKey(new Date());
-  const periodsAhead = granularity === 'weekly' ? horizon * 4 : horizon;
-  const forecast = [];
-
-  for (let i = 1; i <= periodsAhead; i += 1) {
-    const x = history.length - 1 + i;
-    const predicted = Math.max(0, intercept + slope * x);
+  const forecast = auto.predictions.map((pred, i) => {
     const periodKey =
-      granularity === 'weekly' ? addWeeks(lastKey, i) : addMonths(lastKey, i);
+      granularity === 'weekly' ? addWeeks(lastKey, i + 1) : addMonths(lastKey, i + 1);
     const periodLabel =
       granularity === 'weekly'
         ? `Sem. ${periodKey.slice(5)}`
         : monthLabel(periodKey);
-
-    forecast.push({
+    return {
       month: periodKey,
       label: periodLabel,
-      revenue: Number(predicted.toFixed(2)),
-      revenueLow: Number(Math.max(0, predicted - stdRes * 1.2).toFixed(2)),
-      revenueHigh: Number((predicted + stdRes * 1.2).toFixed(2)),
+      revenue: pred.revenue,
+      revenueLow: pred.revenueLow,
+      revenueHigh: pred.revenueHigh,
       orders: history.length
         ? Math.max(0, Math.round(history.reduce((s, h) => s + h.orders, 0) / history.length))
         : 0,
       type: 'forecast',
-    });
-  }
+    };
+  });
 
-  const trend = slope > (granularity === 'weekly' ? 15 : 50) ? 'up' : slope < (granularity === 'weekly' ? -15 : -50) ? 'down' : 'stable';
+  const trend =
+    slope > (granularity === 'weekly' ? 15 : 50)
+      ? 'up'
+      : slope < (granularity === 'weekly' ? -15 : -50)
+        ? 'down'
+        : 'stable';
 
   const totalHistorical = history.reduce((s, h) => s + h.revenue, 0);
   const totalForecast = forecast.reduce((s, f) => s + f.revenue, 0);
 
   return {
-    model: 'linear_regression',
+    model: auto.model,
+    modelLabel: auto.modelLabel,
+    modelBenchmark: auto.modelBenchmark,
+    modelSelection: auto.modelSelection,
     metrics: {
-      r2: Number(r2.toFixed(3)),
-      mape,
+      r2: auto.metrics.r2,
+      mape: auto.metrics.mape,
       trend,
-      slopePerMonth: Number(slope.toFixed(2)),
+      slopePerMonth: slope,
     },
     history: history.map((h) => ({ ...h, type: 'actual' })),
     forecast,
@@ -291,7 +267,38 @@ const getSalesForecast = async ({ monthsBack = 12, horizon = 3 } = {}) => {
     };
   }
 
-  const result = buildForecast(history, horizonMonths, granularity);
+  let result = null;
+  let pythonPowered = false;
+
+  if (isPythonMlEnabled() && granularity === 'monthly' && history.length >= 5) {
+    try {
+      const py = await fetchPythonSalesForecast({
+        history,
+        horizon: horizonMonths,
+        granularity,
+      });
+      if (py?.forecast?.length) {
+        result = {
+          model: py.model,
+          modelLabel: py.modelLabel,
+          modelBenchmark: py.modelBenchmark,
+          modelSelection: py.modelSelection,
+          metrics: py.metrics,
+          history: py.history,
+          forecast: py.forecast,
+          summary: py.summary,
+        };
+        pythonPowered = true;
+      }
+    } catch (err) {
+      console.warn('[ML] XGBoost indisponible, repli Node:', err.message);
+    }
+  }
+
+  if (!result) {
+    result = buildForecast(history, horizonMonths, granularity);
+  }
+
   let insight = null;
   let aiPowered = false;
 
@@ -317,13 +324,15 @@ const getSalesForecast = async ({ monthsBack = 12, horizon = 3 } = {}) => {
         : trend === 'down'
           ? `tendance baissière (${slopePerMonth} DT/${unit})`
           : 'activité stable';
-    insight = `Sur ${history.length} périodes d'historique (${granularity === 'weekly' ? 'hebdomadaire' : 'mensuel'}), le CA prévisionnel sur ${horizonMonths} mois est de ${result.summary.totalForecastRevenue.toLocaleString('fr-FR')} DT (${dir}).`;
+    const engine = pythonPowered ? 'XGBoost (Python)' : 'modèles Node';
+    insight = `Sur ${history.length} périodes (${granularity === 'weekly' ? 'hebdo' : 'mensuel'}), prévision ${engine} sur ${horizonMonths} mois : ${result.summary.totalForecastRevenue.toLocaleString('fr-FR')} DT (${dir}).`;
   }
 
   return {
     ...result,
     insight,
     aiPowered,
+    pythonPowered,
     granularity,
     periodMonths: months,
     horizonMonths,

@@ -7,6 +7,7 @@ const {
 } = require('../services/aiRecommendationAgent.service');
 const { getHealthRecommendations } = require('../services/healthRecommendations.service');
 const { getSalesForecast } = require('../services/salesForecast.service');
+const { runMlBenchmark, runFullMlReport } = require('../services/mlBenchmark.service');
 
 const getDemoUser = (req) => demoStore.getUserById(req.user.id || req.user._id) || req.user;
 
@@ -69,10 +70,33 @@ const getSalesForecastHandler = async (req, res) => {
   }
 };
 
+const getMlBenchmarkHandler = async (req, res) => {
+  try {
+    const months = req.query.months ? Number(req.query.months) : 12;
+    const synthetic = req.query.synthetic === '1' || req.query.synthetic === 'true';
+    const full = req.query.full === '1' || req.query.full === 'true';
+
+    if (full) {
+      const report = await runFullMlReport({
+        monthsBack: months,
+        horizon: req.query.horizon ? Number(req.query.horizon) : 3,
+        useSynthetic: synthetic,
+      });
+      return res.json(report);
+    }
+
+    const result = await runMlBenchmark({ monthsBack: months, useSynthetic: synthetic });
+    res.json(result);
+  } catch (error) {
+    handleError(res, error);
+  }
+};
+
 module.exports = {
   getInsights,
   getRecommendations,
   getTopProducts,
   getHealthRecommendationsHandler,
   getSalesForecastHandler,
+  getMlBenchmarkHandler,
 };

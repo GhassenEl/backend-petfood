@@ -210,20 +210,42 @@ const seedData = async () => {
     console.log(`✅ ${orderCount} commandes`);
 
     console.log('💬 Création des messages…');
+    const allUsers = await prisma.user.findMany({
+      select: { id: true, email: true, role: true },
+    });
+    const userIdByRole = (role) => allUsers.find((u) => u.role === role)?.id;
+    const userIdByEmail = (email) => allUsers.find((u) => u.email === email)?.id;
+    const resolveDemoUserId = (demoId, type) => {
+      const map = {
+        demo_admin: userIdByEmail('admin@petfood.tn'),
+        demo_client: userIdByEmail('client@petfood.tn'),
+        demo_livreur: userIdByEmail('livreur@petfood.tn'),
+        demo_vet: userIdByEmail('vet@petfood.tn'),
+      };
+      if (map[demoId]) return map[demoId];
+      if (String(demoId).includes('@')) return userIdByEmail(demoId);
+      return userIdByRole(type) || orderClient.id;
+    };
+
     const messages = generateMessages();
     const messageInserts = messages
-      .map((msg) => ({
-        senderType: msg.sender?.type || 'client',
-        senderId: msg.sender?.userId || orderClient.id,
-        receiverType: msg.receiver?.type || 'admin',
-        receiverId: msg.receiver?.userId || orderClient.id,
-        orderId: msg.orderId || null,
-        message: msg.message,
-        isRead: Boolean(msg.isRead),
-        createdAt: new Date(msg.createdAt),
-        updatedAt: msg.updatedAt ? new Date(msg.updatedAt) : new Date(msg.createdAt),
-      }))
-      .filter((m) => m.senderId && m.receiverId);
+      .map((msg) => {
+        const senderId = resolveDemoUserId(msg.sender?.userId, msg.sender?.type);
+        const receiverId = resolveDemoUserId(msg.receiver?.userId, msg.receiver?.type);
+        if (!senderId || !receiverId) return null;
+        return {
+          senderType: msg.sender?.type || 'client',
+          senderId,
+          receiverType: msg.receiver?.type || 'admin',
+          receiverId,
+          orderId: msg.orderId || null,
+          message: msg.message,
+          isRead: Boolean(msg.isRead),
+          createdAt: new Date(msg.createdAt),
+          updatedAt: msg.updatedAt ? new Date(msg.updatedAt) : new Date(msg.createdAt),
+        };
+      })
+      .filter(Boolean);
 
     if (messageInserts.length) {
       await prisma.message.createMany({ data: messageInserts });
