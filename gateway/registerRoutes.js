@@ -74,6 +74,7 @@ function registerGatewayRoutes(app) {
   app.use('/api/platform', require('../routes/platformCities.routes'));
   app.use('/api/admin/partners', require('../routes/adminPartners.routes'));
   app.use('/api/admin/prices', require('../routes/adminPriceGovernance.routes'));
+  app.use('/api/admin/uploads', require('../routes/uploads.routes'));
   app.use('/api/client', require('../routes/clientDashboard.routes'));
 }
 

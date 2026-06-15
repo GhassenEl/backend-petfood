@@ -20,6 +20,10 @@ dist/
 build/
 coverage/
 
+# Fichiers uploadés (hors .gitkeep)
+uploads/*
+!uploads/.gitkeep
+
 # Local agent / AI files
 .agent/
 .agents/

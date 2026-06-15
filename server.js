@@ -91,6 +91,9 @@ app.use((req, res, next) => {
 });
 app.use(express.json());
 
+const uploadsStaticPath = path.join(__dirname, 'uploads');
+app.use('/api/uploads', express.static(uploadsStaticPath, { maxAge: '7d', fallthrough: true }));
+
 const { requestMetricsMiddleware } = require('./middleware/requestMetrics.middleware');
 app.use(requestMetricsMiddleware);
 
