@@ -85,6 +85,7 @@ const register = async (req, res) => {
         name,
         phone: req.body.phone || req.body.telephone || '',
         address: req.body.address || '',
+        region: req.body.region || null,
         role: 'client',
       }
     });

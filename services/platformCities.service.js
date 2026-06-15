@@ -292,10 +292,21 @@ const importCities = async (rows) => {
   return { imported: results.length, errors: errors.length, results, errors };
 };
 
+/** Liste des noms de villes/régions actives — source unique pour tous les acteurs. */
+const getRegionNames = async () => {
+  const pack = await getPublicCities();
+  const names = (pack.cities || [])
+    .filter((c) => c.isActive !== false)
+    .map((c) => c.name)
+    .filter(Boolean);
+  return [...new Set(names)];
+};
+
 module.exports = {
   getPack,
   getPublicCities,
   getStoreLocations,
+  getRegionNames,
   updateCity,
   upsertCity,
   ensureSeeded,

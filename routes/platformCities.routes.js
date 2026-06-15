@@ -5,6 +5,7 @@ const c = require('../controllers/platformCities.controller');
 const router = express.Router();
 
 router.get('/cities', c.getPublic);
+router.get('/regions', c.getRegions);
 router.get('/cities/pack', auth, adminAuth, c.getPack);
 router.patch('/cities/:id', auth, adminAuth, c.patchCity);
 router.post('/cities', auth, adminAuth, c.postCity);

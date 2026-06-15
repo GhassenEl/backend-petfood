@@ -412,8 +412,7 @@ const getStoreLocations = async (req, res) => {
 const getDeliveryRegions = async (_req, res) => {
   try {
     const citySvc = require('../services/platformCities.service');
-    const pack = await citySvc.getPublicCities();
-    const regions = pack.cities.map((c) => c.name);
+    const regions = await citySvc.getRegionNames();
     res.json(regions.length ? regions : DELIVERY_REGIONS);
   } catch {
     res.json(DELIVERY_REGIONS);

@@ -8,6 +8,15 @@ exports.getPublic = async (_req, res) => {
   }
 };
 
+exports.getRegions = async (_req, res) => {
+  try {
+    const regions = await svc.getRegionNames();
+    res.json({ regions, source: 'platform' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 exports.getPack = async (_req, res) => {
   try {
     res.json(await svc.getPack());

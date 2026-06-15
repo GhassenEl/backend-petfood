@@ -27,8 +27,8 @@ router.patch('/:id/active', auth, adminAuth, toggleUserActive);
 router.delete('/:id', auth, adminAuth, deleteUser);
 router.get('/count', auth, adminAuth, getUserCount);
 
-// Public store locations
+// Public store locations & regions (villes PetfoodTN)
 router.get('/store-locations', getStoreLocations);
-router.get('/regions', auth, getDeliveryRegions);
+router.get('/regions', getDeliveryRegions);
 
 module.exports = router;
