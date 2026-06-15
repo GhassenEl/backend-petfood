@@ -24,6 +24,9 @@ coverage/
 uploads/*
 !uploads/.gitkeep
 
+# Journaux audit fichier (mode démo / fallback)
+data/activityLogs.json
+
 # Local agent / AI files
 .agent/
 .agents/

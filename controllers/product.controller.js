@@ -2,6 +2,7 @@ const { isDemoMode } = require('../prismaClient');
 const demoStore = require('../utils/demoStore');
 const productService = require('../services/product.service');
 const { getPetRecommendations } = require('../services/petRecommendation.service');
+const { logFromRequest } = require('../services/activityLog.service');
 
 const handleError = (res, error, defaultStatus = 500) => {
   return res.status(error.status || defaultStatus).json({ error: error.message });
@@ -40,10 +41,21 @@ const getProducts = async (req, res) => {
 const createProduct = async (req, res) => {
   try {
     if (isDemoMode()) {
-      return res.status(201).json(demoStore.createProduct(req.body));
+      const product = demoStore.createProduct(req.body);
+      await logFromRequest(req, {
+        action: 'create_product',
+        target: product.name || product._id,
+        module: 'admin',
+      });
+      return res.status(201).json(product);
     }
 
     const product = await productService.createProduct(req.body);
+    await logFromRequest(req, {
+      action: 'create_product',
+      target: product.name || product.id,
+      module: 'admin',
+    });
     res.status(201).json(product);
   } catch (error) {
     handleError(res, error, 400);
@@ -55,10 +67,20 @@ const updateProduct = async (req, res) => {
     if (isDemoMode()) {
       const product = demoStore.updateProduct(req.params.id, req.body);
       if (!product) return res.status(404).json({ error: 'Product not found' });
+      await logFromRequest(req, {
+        action: 'update_product',
+        target: product.name || req.params.id,
+        module: 'admin',
+      });
       return res.json(product);
     }
 
     const product = await productService.updateProduct(req.params.id, req.body);
+    await logFromRequest(req, {
+      action: 'update_product',
+      target: product.name || req.params.id,
+      module: 'admin',
+    });
     res.json(product);
   } catch (error) {
     handleError(res, error, error.code === 'P2025' ? 404 : 400);
@@ -70,10 +92,20 @@ const deleteProduct = async (req, res) => {
     if (isDemoMode()) {
       const product = demoStore.deleteProduct(req.params.id);
       if (!product) return res.status(404).json({ error: 'Product not found' });
+      await logFromRequest(req, {
+        action: 'delete_product',
+        target: product.name || req.params.id,
+        module: 'admin',
+      });
       return res.json({ message: 'Product deleted' });
     }
 
     await productService.deleteProduct(req.params.id);
+    await logFromRequest(req, {
+      action: 'delete_product',
+      target: req.params.id,
+      module: 'admin',
+    });
     res.json({ message: 'Product deleted' });
   } catch (error) {
     handleError(res, error, error.code === 'P2025' ? 404 : 500);

@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const { prisma, isDemoMode } = require('../prismaClient');
 const { normalizeEmail, validateEmail, validatePassword } = require('../utils/authValidation');
 const { recordFailedLogin, resetFailedLogin } = require('../services/intrusionDetection.service');
+const { logFromRequest } = require('../services/activityLog.service');
 
 const demoUsers = {
   'admin@petfood.tn': {
@@ -129,6 +130,14 @@ const login = async (req, res) => {
         const ok = await bcrypt.compare(password, user.password);
         if (!ok) {
           recordFailedLogin(req.ip, email);
+          await logFromRequest(req, {
+            actorRole: 'client',
+            actorName: email,
+            action: 'login_failed',
+            target: email,
+            details: 'Identifiants incorrects',
+            module: 'auth',
+          });
           return res.status(401).json({ error: 'Identifiants incorrects. Vérifiez votre email et mot de passe.' });
         }
       }
@@ -139,6 +148,13 @@ const login = async (req, res) => {
       if (demo) {
         if (password !== demo.demoPassword) {
           recordFailedLogin(req.ip, email);
+          await logFromRequest(req, {
+            actorRole: 'client',
+            actorName: email,
+            action: 'login_failed',
+            target: email,
+            module: 'auth',
+          });
           return res.status(401).json({ error: 'Identifiants incorrects. Vérifiez votre email et mot de passe.' });
         }
         user = demo;
@@ -158,6 +174,14 @@ const login = async (req, res) => {
       name: user.name,
       role: user.role,
     };
+
+    await logFromRequest(req, {
+      actorRole: normalizedUser.role,
+      actorName: normalizedUser.name,
+      action: 'login_success',
+      target: normalizedUser.email,
+      module: 'auth',
+    });
 
     const token = jwt.sign(
       { id: normalizedUser.id, email: normalizedUser.email, name: normalizedUser.name, role: normalizedUser.role },

@@ -1357,3 +1357,23 @@ model PlatformCity {
   @@index([governorate, isActive])
   @@index([priority])
 }
+
+/// Journal d'audit / activité plateforme (persistant)
+model ActivityLog {
+  id        String   @id @default(uuid())
+  at        DateTime @default(now())
+  actorRole String
+  actorId   String?
+  actorName String
+  action    String
+  target    String?
+  details   String?
+  module    String   @default("platform")
+  ip        String?
+  userAgent String?
+
+  @@index([at])
+  @@index([actorRole])
+  @@index([module])
+  @@index([action])
+}
