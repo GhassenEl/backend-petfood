@@ -20,6 +20,9 @@ const {
   createFoundMeDemoReports,
 } = require('./utils/demoData');
 const { defaultBlogArticles } = require('./utils/defaultBlogArticles');
+const { seedRefunds } = require('./utils/seedRefunds');
+const { seedTeleconsultAppointments } = require('./utils/seedTeleconsult');
+const { seedModeratorData } = require('./utils/seedModerator');
 
 const mapProductRow = (product) => ({
   id: product._id,
@@ -170,6 +173,9 @@ const seedData = async () => {
     console.log(`✅ ${allVaccines.length} vaccins`);
 
     await seedBlogArticles();
+    await seedRefunds();
+    await seedTeleconsultAppointments();
+    await seedModeratorData();
 
     const fmCount = await prisma.petFoundMeReport.count();
     if (fmCount === 0) {
@@ -194,6 +200,7 @@ const seedData = async () => {
     console.log('🛒 Création des commandes…');
     const orders = generateOrders(50);
     let orderCount = 0;
+    let invoiceCount = 0;
     for (const order of orders) {
       const items = order.items
         .map((item) => ({
@@ -205,7 +212,16 @@ const seedData = async () => {
 
       if (!items.length) continue;
 
-      await prisma.order.create({
+      const resolvedRegion = order.region || resolveRegionFromAddress(order.address);
+      const regionLivreur = resolvedRegion
+        ? await prisma.user.findFirst({ where: { role: 'livreur', region: resolvedRegion } })
+        : null;
+      const assignedLivreurId =
+        order.status !== 'pending' && order.status !== 'cancelled'
+          ? regionLivreur?.id || livreur?.id
+          : null;
+
+      const createdOrder = await prisma.order.create({
         data: {
           userId: orderClient.id,
           total: Number(order.total),
@@ -213,18 +229,36 @@ const seedData = async () => {
           paymentMethod: order.paymentMethod || 'cash',
           address: order.address,
           phone: order.phone,
-          region: orderClient.region || null,
+          region: resolvedRegion,
           deliveryLocation: order.deliveryLocation || {},
-          assignedLivreurId:
-            order.status !== 'pending' && livreur ? livreur.id : null,
+          assignedLivreurId,
           createdAt: new Date(order.createdAt),
           updatedAt: new Date(order.updatedAt || order.createdAt),
           items: { create: items },
         },
       });
       orderCount += 1;
+
+      if (order.status !== 'cancelled') {
+        await prisma.invoice.create({
+          data: {
+            userId: orderClient.id,
+            orderId: createdOrder.id,
+            amount: Number(order.total),
+            status: order.status === 'paid' ? 'paid' : 'pending',
+            paymentMethod: order.paymentMethod || 'cash',
+            issuedAt: new Date(order.createdAt),
+            paidAt:
+              order.status === 'paid'
+                ? new Date(order.updatedAt || order.createdAt)
+                : null,
+          },
+        });
+        invoiceCount += 1;
+      }
     }
     console.log(`✅ ${orderCount} commandes`);
+    console.log(`✅ ${invoiceCount} factures créées`);
 
     console.log('💬 Création des messages…');
     const allUsers = await prisma.user.findMany({

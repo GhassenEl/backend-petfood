@@ -97,5 +97,19 @@ const adminOrLivreurAuth = (req, res, next) => {
   next();
 };
 
-module.exports = { auth, adminAuth, vetAuth, livreurAuth, adminOrLivreurAuth, isVetOrAdmin };
+const vendorAuth = (req, res, next) => {
+  if (!req.user || !['vendor', 'admin'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Vendor role required' });
+  }
+  next();
+};
+
+const moderatorAuth = (req, res, next) => {
+  if (!req.user || !['moderator', 'admin'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Moderator role required' });
+  }
+  next();
+};
+
+module.exports = { auth, adminAuth, vetAuth, livreurAuth, adminOrLivreurAuth, vendorAuth, moderatorAuth, isVetOrAdmin };
 

@@ -7,6 +7,7 @@ const {
   getUnassignedAppointments,
   claimAppointment,
   confirmAppointment,
+  startTeleconsult,
   updateAppointment,
   getConsultations,
   createConsultation,
@@ -70,6 +71,7 @@ router.get('/appointments/unassigned', auth, vetAuth, getUnassignedAppointments)
 router.get('/appointments', auth, vetAuth, getAppointments);
 router.put('/appointments/:id/claim', auth, vetAuth, claimAppointment);
 router.put('/appointments/:id/confirm', auth, vetAuth, confirmAppointment);
+router.post('/appointments/:id/teleconsult/start', auth, vetAuth, startTeleconsult);
 router.put('/appointments/:id', auth, vetAuth, updateAppointment);
 
 router.get('/consultations', auth, vetAuth, getConsultations);
@@ -107,9 +109,17 @@ const {
   patientContext,
   petTimeline,
   clinicalAlerts,
+  createMedicationHandler,
+  adjustStockHandler,
+  updateThresholdsHandler,
+  listMovements,
 } = require('../controllers/pharmacy.controller');
 
 router.get('/pharmacy/medications', auth, vetAuth, listMedications);
+router.post('/pharmacy/medications', auth, vetAuth, createMedicationHandler);
+router.patch('/pharmacy/medications/:id/adjust', auth, vetAuth, adjustStockHandler);
+router.patch('/pharmacy/medications/:id/thresholds', auth, vetAuth, updateThresholdsHandler);
+router.get('/pharmacy/movements', auth, vetAuth, listMovements);
 router.get('/pharmacy/suggest', auth, vetAuth, suggestTreatment);
 router.post('/pharmacy/calculate-dose', auth, vetAuth, computeDose);
 router.get('/pharmacy/stock-alerts', auth, vetAuth, stockAlerts);

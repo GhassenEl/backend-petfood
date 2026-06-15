@@ -215,11 +215,11 @@ const getAppointments = async (req, res) => {
         ...(isAdmin
           ? {}
           : {
-              OR: [
-                { vetId },
-                { vetId: null, status: { in: ['scheduled', 'pending'] } },
-              ],
-            }),
+            OR: [
+              { vetId },
+              { vetId: null, status: { in: ['scheduled', 'pending'] } },
+            ],
+          }),
       },
       include: {
         owner: { select: { id: true, name: true, email: true, phone: true } },
@@ -641,23 +641,23 @@ const getHistory = async (req, res) => {
         : [],
       !type || type === 'dossier'
         ? prisma.medicalDossierEntry.findMany({
-            where: {
-              ...(req.user?.role === 'admin' ? {} : { vetId: getUserId(req) }),
-              ...(petName || ownerId
-                ? {
-                    dossier: {
-                      ...(petName ? { petName: { contains: petName } } : {}),
-                      ...(ownerId ? { ownerId } : {}),
-                    },
-                  }
-                : {}),
-            },
-            orderBy: { visitDate: 'desc' },
-            take: 50,
-            include: {
-              dossier: { select: { petName: true, dossierNumber: true, ownerId: true } },
-            },
-          })
+          where: {
+            ...(req.user?.role === 'admin' ? {} : { vetId: getUserId(req) }),
+            ...(petName || ownerId
+              ? {
+                dossier: {
+                  ...(petName ? { petName: { contains: petName } } : {}),
+                  ...(ownerId ? { ownerId } : {}),
+                },
+              }
+              : {}),
+          },
+          orderBy: { visitDate: 'desc' },
+          take: 50,
+          include: {
+            dossier: { select: { petName: true, dossierNumber: true, ownerId: true } },
+          },
+        })
         : [],
     ]);
 
@@ -711,12 +711,56 @@ const respondContactRequest = async (req, res) => {
           receiverId: updated.ownerId,
           message: response,
         },
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     return res.json(updated);
   } catch (err) {
     return res.status(400).json({ error: err.message || 'Erreur réponse demande' });
+  }
+};
+
+const startTeleconsult = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const vetId = getUserId(req);
+
+    if (isDemoMode()) {
+      return res.json({
+        id,
+        status: 'confirmed',
+        vetId,
+        visitMode: 'online',
+        meetingLink: generateGoogleMeetLink(),
+      });
+    }
+
+    const existing = await prisma.petAppointment.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ error: 'Rendez-vous introuvable' });
+    if (!isOnlineVisit(existing)) {
+      return res.status(400).json({ error: 'Ce rendez-vous n\'est pas une téléconsultation en ligne' });
+    }
+
+    const ownershipError = assertVetOwnsAppointment(req, existing, { allowUnassigned: true });
+    if (ownershipError) return res.status(403).json({ error: ownershipError });
+
+    const updated = await prisma.petAppointment.update({
+      where: { id },
+      data: {
+        status: 'confirmed',
+        vetId: existing.vetId || vetId,
+        reminderSent: true,
+        meetingLink: existing.meetingLink || generateGoogleMeetLink(),
+      },
+      include: {
+        owner: { select: { id: true, name: true, email: true, phone: true } },
+        vet: { select: { id: true, name: true } },
+      },
+    });
+
+    return res.json(updated);
+  } catch (err) {
+    return res.status(400).json({ error: err.message || 'Erreur démarrage téléconsultation' });
   }
 };
 
@@ -726,6 +770,7 @@ module.exports = {
   getUnassignedAppointments,
   claimAppointment,
   confirmAppointment,
+  startTeleconsult,
   updateAppointment,
   getConsultations,
   createConsultation,

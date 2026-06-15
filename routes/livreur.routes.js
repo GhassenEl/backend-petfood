@@ -9,6 +9,7 @@ const {
   mission,
   claim,
   complete,
+  cancel,
 } = require('../controllers/livreur.controller');
 
 const router = express.Router();
@@ -22,6 +23,7 @@ router.get('/stats', advancedStats);
 router.post('/gps', postGps);
 router.post('/orders/:orderId/claim', claim);
 router.post('/orders/:orderId/complete', complete);
+router.post('/orders/:orderId/cancel', cancel);
 router.post('/orders/:orderId/issue', postIssue);
 
 module.exports = router;

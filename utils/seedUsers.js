@@ -41,6 +41,22 @@ const DEMO_ACCOUNTS = [
     region: 'Ariana',
     phone: '+216 50 333 444',
   },
+  {
+    email: 'vendor@petfood.tn',
+    password: 'Vendor2024!',
+    name: 'Leila Mansouri',
+    role: 'vendor',
+    region: 'Tunis',
+    phone: '+216 21 444 555',
+  },
+  {
+    email: 'moderator@petfood.tn',
+    password: 'Moderator2024!',
+    name: 'Nour Modération',
+    role: 'moderator',
+    region: 'La Marsa',
+    phone: '+216 21 555 666',
+  },
 ];
 
 const DEMO_PETS = [

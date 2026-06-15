@@ -1,6 +1,7 @@
 const { prisma, isDemoMode } = require('../prismaClient');
 const { completionWithSystem } = require('./groq.service');
 const { getHealthRecommendations } = require('./healthRecommendations.service');
+const { predictClinicalUrgency, mergeMlWithAnalysis } = require('../ml/clinicalUrgencyModel');
 
 const ANALYSIS_SYSTEM = `Tu es un assistant clinique vétérinaire PetfoodTN.
 Analyse les symptômes et le profil animal pour détecter des anomalies et proposer des pistes.
@@ -174,7 +175,7 @@ const ruleBasedAnalysis = async (profile, symptoms) => {
   const symptomLower = (symptoms || '').toLowerCase();
 
   const anomalies = [];
-  if (/vomit|diarr|diarrhée|vomir/i.test(symptomLower)) {
+  if (/vomis|vomir|vomit|diarr|diarrhée/i.test(symptomLower)) {
     anomalies.push({
       label: 'Trouble digestif',
       severity: 'medium',
@@ -292,6 +293,14 @@ const analyzePetAnomalies = async ({ ownerId, petId, petName, animalType, sympto
       },
       followUpDays: 5,
       aiPowered: true,
+      mlPowered: true,
+      mlModel: predictClinicalUrgency({
+        symptoms: symptoms || 'Perte d\'appétit, pelage terne',
+        vitals: vitals || {},
+        profile: {
+          pet: { name: petName || 'Mimi', type: 'cat', ageYears: 3, weightKg: 4.2 },
+        },
+      }),
     };
   }
 
@@ -331,6 +340,9 @@ Privilégie les médicaments du catalogue quand pertinent.`;
   } else {
     analysis.aiPowered = true;
   }
+
+  const ml = predictClinicalUrgency({ symptoms, vitals, profile });
+  analysis = mergeMlWithAnalysis(analysis, ml);
 
   return {
     profile,

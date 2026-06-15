@@ -48,7 +48,17 @@ const getStats = async (role) => {
 };
 
 const createOrder = async (userId, payload) => {
-  const { items, address, phone, paymentMethod, location, paymentNote, promoCode } = payload;
+  const {
+    items,
+    address,
+    phone,
+    paymentMethod,
+    location,
+    paymentNote,
+    promoCode,
+    deliveryMode = 'home',
+    relayPointId,
+  } = payload;
 
   if (paymentMethod && !isValidPaymentMethod(paymentMethod)) {
     const error = new Error('Méthode de paiement non reconnue');
@@ -56,9 +66,33 @@ const createOrder = async (userId, payload) => {
     throw error;
   }
   const normalizedPayment = normalizePaymentMethod(paymentMethod) || 'cash';
-  const deliveryAddress = paymentNote
+  let deliveryAddress = paymentNote
     ? `${address || ''}\n[Paiement] ${paymentNote}`.trim()
     : address;
+  let normalizedDeliveryMode = deliveryMode === 'relay' ? 'relay' : 'home';
+  let relayPointName = null;
+  let relayPointType = null;
+  let resolvedRelayId = null;
+
+  if (normalizedDeliveryMode === 'relay') {
+    if (!relayPointId) {
+      const error = new Error('Point relais requis pour le retrait');
+      error.status = 400;
+      throw error;
+    }
+    try {
+      const partnerRelay = require('./ecosystem/partnerRelay.service');
+      const point = await partnerRelay.getRelayPointById(relayPointId);
+      resolvedRelayId = point.id;
+      relayPointName = point.name;
+      relayPointType = point.type;
+      deliveryAddress = `[Retrait point relais] ${point.name}\n${point.address}${point.hours ? `\nHoraires: ${point.hours}` : ''}`;
+    } catch (e) {
+      const error = new Error(e.message || 'Point relais invalide');
+      error.status = e.status || 400;
+      throw error;
+    }
+  }
 
   if (!Array.isArray(items) || items.length === 0) {
     const error = new Error('Order items are required');
@@ -99,7 +133,7 @@ const createOrder = async (userId, payload) => {
     );
   }
 
-  const order = await orderRepository.create({
+  const orderData = {
     userId,
     total: orderTotal,
     subtotal: orderSubtotal,
@@ -111,14 +145,33 @@ const createOrder = async (userId, payload) => {
     phone,
     region,
     deliveryLocation: location || null,
+    deliveryMode: normalizedDeliveryMode,
+    deliveryStatus: normalizedDeliveryMode === 'relay' ? 'awaiting_pickup' : 'pending',
+    relayPointId: resolvedRelayId,
+    relayPointName,
+    relayPointType,
     items: {
       create: validatedItems.map((item) => ({
         product: { connect: { id: item.productId } },
         quantity: item.quantity,
-        price: item.price
-      }))
-    }
-  });
+        price: item.price,
+      })),
+    },
+  };
+
+  let order;
+  try {
+    order = await orderRepository.create(orderData);
+  } catch (prismaErr) {
+    const {
+      deliveryMode: _dm,
+      relayPointId: _rp,
+      relayPointName: _rn,
+      relayPointType: _rt,
+      ...fallback
+    } = orderData;
+    order = await orderRepository.create(fallback);
+  }
 
   if (promoRecord?.id) {
     await promoService.incrementPromoUsage(promoRecord.id);
@@ -132,19 +185,21 @@ const createOrder = async (userId, payload) => {
       paymentMethod: normalizedPayment,
       status: normalizedPayment === 'wallet' ? 'paid' : 'unpaid',
       paidAt: normalizedPayment === 'wallet' ? new Date() : null,
-    }
+    },
   });
 
   try {
-    const { notifyLivreursInRegion } = require('../utils/notificationHub');
-    await notifyLivreursInRegion(region, {
-      id: `livreur-order-${order.id}`,
-      type: 'livreur_new_order',
-      title: `Nouvelle livraison #${order.id.slice(-6)}`,
-      description: `${region || 'Zone'} — ${orderTotal} DT`,
-      link: '/livreur/orders',
-      createdAt: new Date().toISOString(),
-    });
+    if (normalizedDeliveryMode !== 'relay') {
+      const { notifyLivreursInRegion } = require('../utils/notificationHub');
+      await notifyLivreursInRegion(region, {
+        id: `livreur-order-${order.id}`,
+        type: 'livreur_new_order',
+        title: `Nouvelle livraison #${order.id.slice(-6)}`,
+        description: `${region || 'Zone'} — ${orderTotal} DT`,
+        link: '/livreur/orders',
+        createdAt: new Date().toISOString(),
+      });
+    }
   } catch {
     /* non bloquant */
   }
@@ -347,6 +402,49 @@ const deleteOrder = async (id, user) => {
   return orderRepository.deleteWithDependencies(id);
 };
 
+const cancelOrder = async (id, user, { reason } = {}) => {
+  const order = await orderRepository.findById(id);
+  if (!order) {
+    const error = new Error('Order not found');
+    error.status = 404;
+    throw error;
+  }
+
+  assertOrderOwner(order, user);
+
+  if (!['pending', 'paid'].includes(order.status)) {
+    const error = new Error('Cette commande ne peut plus être annulée');
+    error.status = 400;
+    throw error;
+  }
+
+  const updated = await orderRepository.update(id, {
+    status: 'cancelled',
+    deliveryStatus: 'cancelled',
+  });
+
+  try {
+    await prisma.invoice.updateMany({
+      where: { orderId: id, status: { notIn: ['paid', 'cancelled'] } },
+      data: { status: 'cancelled' },
+    });
+  } catch {
+    /* non bloquant */
+  }
+
+  if (reason) {
+    try {
+      await orderRepository.update(id, {
+        deliveryNote: `[Annulation client] ${String(reason).slice(0, 400)}`,
+      });
+    } catch {
+      /* champ optionnel */
+    }
+  }
+
+  return updated;
+};
+
 const getOrderTracking = async (orderId, user) => {
   const order = await orderRepository.findById(orderId);
   if (!order) {
@@ -392,5 +490,6 @@ module.exports = {
   livreurUpdateStatus,
   updateOrder,
   deleteOrder,
+  cancelOrder,
   getOrderTracking,
 };

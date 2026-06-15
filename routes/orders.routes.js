@@ -8,6 +8,7 @@ const {
   updateOrder,
   updateOrderStatus,
   deleteOrder,
+  cancelOrder,
   getOrderTracking,
 } = require('../controllers/order.controller');
 
@@ -33,6 +34,9 @@ router.patch('/:id/status', auth, adminOrLivreurAuth, updateOrderStatus);
 
 // Admin update (champs complets)
 router.put('/:id', auth, adminAuth, updateOrder);
+
+// Client / admin — annulation (statut cancelled, sans suppression)
+router.post('/:id/cancel', auth, cancelOrder);
 
 // Admin / owner delete
 router.delete('/:id', auth, deleteOrder);

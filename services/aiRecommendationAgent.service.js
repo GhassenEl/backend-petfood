@@ -3,6 +3,8 @@ const { buildClientInsights } = require('./clientInsights.service');
 const { getPetRecommendations } = require('./petRecommendation.service');
 const { getTopSellingProducts } = require('./topProductsAgent.service');
 const { normalizeProductRecord } = require('../utils/productNormalize');
+const { predictClientChurn } = require('../ml/clientChurnModel');
+const { prisma } = require('../prismaClient');
 
 const CLIENT_AGENT_PROMPT = `Tu es l'agent IA PetfoodTN pour les clients.
 Tu analyses les achats, avis et préférences pour expliquer les tendances et recommander des produits pour animaux.
@@ -121,9 +123,28 @@ const getPersonalizedRecommendations = async (user, { petId, limit = 8 } = {}) =
     inferredAnimalFocus: insights.purchase.topAnimalTypes.map((a) => a.type),
   };
 
+  const userId = String(user.id || user._id);
+  const orders = await prisma.order.findMany({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+    select: { total: true, createdAt: true },
+  });
+  const lastOrderAt = orders[0]?.createdAt;
+  const churnMl = predictClientChurn({
+    userId,
+    userName: user.name,
+    orderCount: insights.purchase.orderCount || orders.length,
+    totalSpent: insights.purchase.totalSpent || orders.reduce((s, o) => s + Number(o.total || 0), 0),
+    lastOrderAt,
+    reviewCount: insights.reviews?.count || 0,
+  });
+
   return {
     agent: 'client_personalization',
     aiPowered,
+    mlPowered: true,
+    models: ['product_fit_v1', 'churn_logistic_v1', aiPowered ? 'groq' : 'rules_scoring'],
     summary: aiSummary,
     trends,
     preferences,
@@ -132,6 +153,8 @@ const getPersonalizedRecommendations = async (user, { petId, limit = 8 } = {}) =
     selectedPetId: petResult.selectedPetId,
     recommendations,
     insights,
+    churnMl,
+    rebuyScore: churnMl,
   };
 };
 

@@ -1,5 +1,6 @@
 const express = require('express');
 const { auth, adminAuth } = require('../middleware/auth');
+const { threatScanMiddleware } = require('../middleware/threatScan.middleware');
 const {
   getMyComplaints,
   createComplaint,
@@ -14,7 +15,7 @@ const router = express.Router();
 
 // Client
 router.get('/', auth, getMyComplaints);
-router.post('/', auth, createComplaint);
+router.post('/', auth, threatScanMiddleware({ source: 'complaint_create' }), createComplaint);
 
 // Admin
 router.get('/count', auth, adminAuth, getComplaintCount);

@@ -49,6 +49,7 @@ function registerGatewayRoutes(app) {
   app.use('/api/feeder', require('../routes/feeder.routes'));
   app.use('/api/nutrition', require('../routes/nutrition.routes'));
   app.use('/api/chat', require('../routes/chat.routes'));
+  app.use('/api/security', require('../routes/security.routes'));
   app.use('/api/vet', require('../routes/vet.routes'));
   app.use('/api/livreur', require('../routes/livreur.routes'));
   app.use('/api/events', require('../routes/events.routes'));
@@ -63,6 +64,17 @@ function registerGatewayRoutes(app) {
   app.use('/api/service-bookings', require('../routes/serviceBookings.routes'));
   app.use('/api/blog-articles', require('../routes/blogArticles.routes'));
   app.use('/api/found-me', require('../routes/foundMe.routes'));
+  app.use('/api/ecosystem', require('../routes/ecosystem.routes'));
+  app.use('/api/refunds', require('../routes/refunds.routes'));
+  app.use('/api/admin/refunds', require('../routes/adminRefunds.routes'));
+  app.use('/api/admin/crm', require('../routes/adminCrm.routes'));
+  app.use('/api/admin/stock-bi', require('../routes/adminStockBi.routes'));
+  app.use('/api/admin/stock', require('../routes/adminStock.routes'));
+  app.use('/api/platform', require('../routes/platform.routes'));
+  app.use('/api/platform', require('../routes/platformCities.routes'));
+  app.use('/api/admin/partners', require('../routes/adminPartners.routes'));
+  app.use('/api/admin/prices', require('../routes/adminPriceGovernance.routes'));
+  app.use('/api/client', require('../routes/clientDashboard.routes'));
 }
 
 /** @deprecated Conservé pour compatibilité — équivalent à registerGatewayRoutes */

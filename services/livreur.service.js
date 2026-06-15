@@ -333,6 +333,30 @@ const completeDelivery = async (userId, orderId, payload) => {
   );
 };
 
+const cancelDelivery = async (userId, orderId, { reason } = {}) => {
+  const order = await prisma.order.findUnique({ where: { id: orderId } });
+  if (!order) throw Object.assign(new Error('Commande introuvable'), { status: 404 });
+  if (order.assignedLivreurId !== userId) {
+    throw Object.assign(new Error('Cette course ne vous est pas assignée'), { status: 403 });
+  }
+  if (order.status !== 'shipped') {
+    throw Object.assign(new Error('Seules les courses en livraison peuvent être annulées'), { status: 400 });
+  }
+
+  const orderRepository = require('../repositories/order.repository');
+  const note = reason
+    ? `[Livreur — annulation] ${String(reason).slice(0, 400)}`
+    : '[Livreur — course remise en file d\'attente]';
+
+  return orderRepository.update(orderId, {
+    status: 'pending',
+    assignedLivreurId: null,
+    shippedAt: null,
+    deliveryStatus: 'pending',
+    deliveryNote: note,
+  });
+};
+
 module.exports = {
   COMMISSION_DT,
   getDashboard,
@@ -343,6 +367,7 @@ module.exports = {
   claimOrder,
   getActiveMission,
   completeDelivery,
+  cancelDelivery,
   parseCoords,
   haversineKm,
 };

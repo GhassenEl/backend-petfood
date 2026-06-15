@@ -18,7 +18,13 @@ const PLATFORM_SERVICES = [
 
 const VALID_SERVICE_TYPES = PLATFORM_SERVICES.map((s) => s.type);
 
-const RATING_SERVICE_TYPES = ['grooming', 'boarding', 'training', 'delivery', 'veterinary'];
+const RATING_SERVICE_TYPES = [
+  'grooming', 'bathing', 'nail_trim', 'dental_cleaning', 'wellness_pack',
+  'home_sitting', 'boarding', 'training', 'rehabilitation', 'daycare',
+  'delivery', 'veterinary',
+];
+
+const BOOKING_SERVICE_TYPES = RATING_SERVICE_TYPES.filter((t) => !['delivery', 'veterinary'].includes(t));
 
 const emotionMeta = (id) => OWNER_EMOTIONS.find((e) => e.id === id) || OWNER_EMOTIONS[2];
 
@@ -29,6 +35,7 @@ module.exports = {
   PLATFORM_SERVICES,
   VALID_SERVICE_TYPES,
   RATING_SERVICE_TYPES,
+  BOOKING_SERVICE_TYPES,
   emotionMeta,
   serviceMeta,
 };

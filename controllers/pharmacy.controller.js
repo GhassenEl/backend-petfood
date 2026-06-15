@@ -3,8 +3,13 @@ const {
   suggestByDiagnosis,
   calculateDose,
   getLowStockAlerts,
+  createMedication,
+  adjustMedicationStock,
+  updateMedicationThresholds,
+  getMedicationMovements,
 } = require('../services/pharmacy.service');
 const { getPatientContext, getPetTimeline, getVetClinicalAlerts } = require('../services/clinicalAlerts.service');
+const { emitPlatformPulse } = require('../utils/platformPulse');
 
 const listMedications = async (req, res) => {
   try {
@@ -75,6 +80,48 @@ const clinicalAlerts = async (req, res) => {
   }
 };
 
+const createMedicationHandler = async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?._id;
+    const medication = await createMedication(req.body || {}, userId);
+    emitPlatformPulse('vet-pharmacy-create');
+    return res.status(201).json(medication);
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.message });
+  }
+};
+
+const adjustStockHandler = async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?._id;
+    const medication = await adjustMedicationStock(req.params.id, req.body || {}, userId);
+    emitPlatformPulse('vet-pharmacy-adjust');
+    return res.json(medication);
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.message });
+  }
+};
+
+const updateThresholdsHandler = async (req, res) => {
+  try {
+    const medication = await updateMedicationThresholds(req.params.id, req.body || {});
+    emitPlatformPulse('vet-pharmacy-thresholds');
+    return res.json(medication);
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.message });
+  }
+};
+
+const listMovements = async (req, res) => {
+  try {
+    const limit = Number(req.query.limit) || 30;
+    const movements = await getMedicationMovements(limit);
+    return res.json(movements);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
 module.exports = {
   listMedications,
   suggestTreatment,
@@ -83,4 +130,8 @@ module.exports = {
   patientContext,
   petTimeline,
   clinicalAlerts,
+  createMedicationHandler,
+  adjustStockHandler,
+  updateThresholdsHandler,
+  listMovements,
 };

@@ -141,9 +141,26 @@ const getMyAppointments = async (req, res) => {
 const createAppointment = async (req, res) => {
   try {
     const isClinicalStaff = isVetOrAdmin(req);
-    const ownerId = isClinicalStaff
-      ? (req.body?.ownerId || req.user?.id || req.user?._id)
-      : (req.user?.id || req.user?._id);
+
+    const resolveOwnerId = async () => {
+      if (isClinicalStaff) return req.body?.ownerId || req.user?.id || req.user?._id;
+      const candidates = [req.user?.id, req.user?._id].filter(Boolean);
+      for (const id of candidates) {
+        if (id && !String(id).startsWith('demo_')) {
+          const u = await prisma.user.findUnique({ where: { id: String(id) } });
+          if (u) return u.id;
+        }
+      }
+      if (req.user?.email) {
+        const u = await prisma.user.findUnique({
+          where: { email: String(req.user.email).toLowerCase() },
+        });
+        if (u) return u.id;
+      }
+      return candidates[0] || null;
+    };
+
+    const ownerId = await resolveOwnerId();
 
     const { petName, animalType, date, notes, meetingLink, visitMode, homeAddress, type: bodyType } = req.body || {};
 

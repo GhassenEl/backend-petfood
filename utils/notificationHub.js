@@ -6,6 +6,8 @@ const setNotificationIo = (io) => {
   ioInstance = io;
 };
 
+const getNotificationIo = () => ioInstance;
+
 const emitToUser = (userId, payload) => {
   if (!ioInstance || !userId) return;
   ioInstance.to(`user:${userId}`).emit('notification:new', payload);
@@ -59,6 +61,7 @@ const notifyVets = async (payload, vetId = null) => {
 
 module.exports = {
   setNotificationIo,
+  getNotificationIo,
   emitToUser,
   emitHumanMessage,
   emitToRole,

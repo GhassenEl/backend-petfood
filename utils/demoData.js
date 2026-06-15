@@ -363,6 +363,29 @@ function generateOrders(count = 25) {
   return orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
+function generateInvoices(orders = []) {
+  return orders
+    .filter((order) => order.status !== 'cancelled')
+    .map((order) => {
+      const normalizedUserId = typeof order.userId === 'object'
+        ? order.userId._id || order.userId.id || order.userId
+        : order.userId;
+      const createdAt = new Date(order.createdAt);
+      const paid = order.status === 'paid';
+
+      return {
+        _id: createId('inv'),
+        userId: normalizedUserId,
+        orderId: order._id || order.id,
+        amount: Number(order.total || 0),
+        status: paid ? 'paid' : 'pending',
+        paymentMethod: order.paymentMethod || 'cash',
+        issuedAt: createdAt.toISOString(),
+        paidAt: paid ? new Date(createdAt.getTime() + 60 * 60 * 1000).toISOString() : null,
+      };
+    });
+}
+
 function generateMessages() {
   return [
     {
@@ -698,6 +721,7 @@ const createFoundMeDemoReports = (ownerId) => {
 
 module.exports = {
   generateOrders,
+  generateInvoices,
   generateMessages,
   demoProducts,
   demoClient,

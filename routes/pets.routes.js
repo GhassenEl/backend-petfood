@@ -17,12 +17,22 @@ const {
   getPetCaloriesById,
   postCalculateCalories,
 } = require('../controllers/petCalorie.controller');
+const {
+  getAllPetNutrition,
+  getPetNutritionById,
+  postCalculateNutrition,
+} = require('../controllers/petNutrition.controller');
 
 const router = express.Router();
+
+// Nutrition (avant /:petId)
+router.get('/nutrition', auth, getAllPetNutrition);
+router.post('/nutrition/calculate', auth, postCalculateNutrition);
 
 // Calories (avant /:petId pour éviter conflit de routes)
 router.get('/calories', auth, getAllPetCalories);
 router.post('/calories/calculate', auth, postCalculateCalories);
+router.get('/:petId/nutrition', auth, getPetNutritionById);
 router.get('/:petId/calories', auth, getPetCaloriesById);
 
 // Pets

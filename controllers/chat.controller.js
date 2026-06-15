@@ -5,6 +5,9 @@ const { getPersonalizedRecommendations } = require('../services/aiRecommendation
 const { normalizeProductRecord, effectiveDiscount } = require('../utils/productNormalize');
 const { enrichProduct } = require('../utils/productDetailsCatalog');
 const promoService = require('../services/promo.service');
+const { analyzeTextFull } = require('../services/nlpTextAnalysis.service');
+const roleChat = require('../services/roleChatAssistant.service');
+const { getReviewBasedRecommendations } = require('../services/reviewRecommendation.service');
 
 async function resolveUserForRecommendations(userId, options = {}) {
   if (options.user) return options.user;
@@ -83,6 +86,12 @@ function detectIntent(text) {
   const thanksWords = /merci|thanks|thank you|cool|super|génial|parfait/;
   const byeWords = /au revoir|bye|adieu|à plus|à bientôt/;
   const profileWords = /profil|mon animal|mon chien|mon chat|âge|type|préférence/;
+  const iotWords = /iot|esp32|distributeur|feeder|fontaine|connecté|connecte|capteur|smart water|nourriture automatique/;
+  const traceabilityWords = /traçabilit|traceabilit|blockchain|origine.*aliment|certification|numéro de lot|lot produit/;
+  const waterWords = /hydrat|fontaine|consommation d'eau|boit peu|soif|eau.*chat|eau.*chien/;
+  const complaintWords = /réclamation|reclamation|plainte|insatisfait|mécontent|mecontent|problème avec|probleme avec/;
+  const loyaltyWords = /fidélité|fidelite|points|récompense|recompense|programme fid/;
+  const servicesWords = /toilettage|pension|dressage|garde|forfait bien|service.*réserver|reserver.*service/;
 
   // Event / rendez-vous
   const eventWords = /événement|evenement|anniversaire|rendez-vous|rendez vous|rdv|competition|compétition|match|cadeau|avis (événement|evenement)|avis (rendez-vous|rendez vous)|l(aisser)? un avis/;
@@ -101,6 +110,12 @@ function detectIntent(text) {
   if (paymentWords.test(t)) return 'payment';
   if (promoWords.test(t)) return 'promo';
   if (profileWords.test(t)) return 'profile';
+  if (complaintWords.test(t)) return 'complaint';
+  if (iotWords.test(t)) return 'iot';
+  if (traceabilityWords.test(t)) return 'traceability';
+  if (waterWords.test(t)) return 'water';
+  if (loyaltyWords.test(t)) return 'loyalty';
+  if (servicesWords.test(t)) return 'services';
   if (veterinaryWords.test(t)) return 'veterinary';
   if (eventWords.test(t)) return 'events';
   if (searchWords.test(t)) return 'recommend';
@@ -241,7 +256,212 @@ function buildAutoFaqResponse(userMessage, user) {
     };
   }
 
+  if (/iot|esp32|distributeur|feeder|connecté|connecte|capteur|nourriture automatique/.test(t)) {
+    return {
+      content:
+        '📡 **IoT & distributeur**\n\n' +
+        '• **Centre IoT** : vue d\'ensemble (distributeur, fontaine, livraison, traçabilité)\n' +
+        '• **Distributeur IoT** : portions automatiques, horaires, alertes niveau croquettes\n' +
+        '• **ESP32** : créez un distributeur, copiez la clé appareil, flashez le firmware Wi-Fi\n' +
+        '• Statut **En ligne** = capteurs synchronisés\n\n' +
+        'Menu latéral → **IoT & connecté**.',
+      quickReplies: ['Centre IoT', 'Recommandations', 'Mes commandes'],
+    };
+  }
+
+  if (/traçabilit|traceabilit|blockchain|origine.*aliment|certification|numéro de lot/.test(t)) {
+    return {
+      content:
+        '🔗 **Traçabilité blockchain**\n\n' +
+        'Vérifiez l\'**origine** des aliments, les **certifications** (ISO, Bio…) et la **chaîne d\'approvisionnement** immuable (SHA-256).\n\n' +
+        '• Menu **Traçabilité blockchain** ou **Centre IoT**\n' +
+        '• Sélectionnez un produit pour voir lot, producteur, région et hash des blocs',
+      quickReplies: ['Centre IoT', 'Recommandations', 'Mes commandes'],
+    };
+  }
+
+  if (/fontaine|hydrat|eau.*consomm|boit peu|soif|smart water/.test(t)) {
+    return {
+      content:
+        '💧 **Fontaine connectée**\n\n' +
+        'Suivez l\'**hydratation** de votre ' + petLabel + ' : réservoir, filtres, courbes de consommation et alertes si objectif non atteint.\n\n' +
+        '• Menu **Fontaine connectée** ou **Centre IoT**\n' +
+        '• Lié à la nutrition : ajustez eau + croquettes selon l\'activité',
+      quickReplies: ['Centre IoT', 'Recommandations', 'Contacter vétérinaire'],
+    };
+  }
+
+  if (/fidélité|fidelite|points|récompense|recompense/.test(t)) {
+    return {
+      content:
+        '🎁 **Programme fidélité**\n\n' +
+        'Cumulez des **points** à chaque achat et service. Échangez-les contre des réductions ou cadeaux.\n\n' +
+        '• Menu **Fidélité** pour votre solde et l\'historique',
+      quickReplies: ['Voir les promotions', 'Mes commandes', 'Recommandations'],
+    };
+  }
+
+  if (/toilettage|pension|dressage|garde|forfait bien|service.*réserv|réserver.*rdv/.test(t)) {
+    return {
+      content:
+        '✂️ **Services PetfoodTN**\n\n' +
+        'Toilettage, pension, dressage, forfait bien-être — réservez en ligne.\n\n' +
+        '• **Catalogue services** : toutes les offres\n' +
+        '• **Mes services** : vos réservations et créneaux',
+      quickReplies: ['Recommandations', 'Contacter vétérinaire', 'Mes commandes'],
+    };
+  }
+
+  if (/avis|note|étoile|etoile|commentaire|sentiment/.test(t)) {
+    return {
+      content:
+        '⭐ **Avis & sentiments**\n\n' +
+        'Notez produits et services sur **5 étoiles**. L\'analyse NLP détecte émotion et sentiment de vos commentaires.\n\n' +
+        '• Menu **Mes avis** → onglets Avis produits, Services, Sentiments',
+      quickReplies: ['Mes commandes', 'Réclamation', 'Recommandations'],
+    };
+  }
+
+  if (/facture|reçu|recu|justificatif/.test(t) && !/impay/.test(t)) {
+    return {
+      content:
+        '🧾 **Factures**\n\n' +
+        'Consultez et téléchargez vos factures dans **Mes factures**. Paiement via checkout (Stripe, PayPal, portefeuille).',
+      quickReplies: ['Guide paiement', 'Mes commandes', 'Payer mes factures'],
+    };
+  }
+
+  if (/magasin|boutique physique|point de vente|horaire.*ouvert/.test(t)) {
+    return {
+      content:
+        '📍 **Magasins**\n\n' +
+        'Trouvez le **magasin le plus proche** avec carte, horaires et coordonnées — menu **Magasin le plus proche**.',
+      quickReplies: ['Recommandations', 'Mes commandes', 'Passer commande'],
+    };
+  }
+
+  if (/calorie|nutrition|poids|maigrir|grossir|obésité|obesite/.test(t)) {
+    return {
+      content:
+        '🥗 **Nutrition**\n\n' +
+        'Calculateur **calories par animal** (chien, chat, oiseau, NAC…) selon race, âge et activité.\n\n' +
+        '• Menu **Nutrition par animal**',
+      quickReplies: ['Recommandations', 'Portion recommandée', 'Contacter vétérinaire'],
+    };
+  }
+
+  if (/animal perdu|perdu|retrouvé|retrouve|qr code|puce/.test(t)) {
+    return {
+      content:
+        '🔍 **Retrouvé Moi**\n\n' +
+        'Signalez un animal perdu, générez une alerte QR et consultez les signalements communautaires.\n\n' +
+        '• Menu **Retrouvé Moi**',
+      quickReplies: ['Contacter vétérinaire', 'Mes commandes', 'Recommandations'],
+    };
+  }
+
   return null;
+}
+
+/** Réponse guidée par entités NLP (sans LLM cloud). */
+async function buildNlpGuidedResponse(userId, userMessage, user, nlp) {
+  if (!nlp) return null;
+
+  const t = String(userMessage || '').toLowerCase();
+  const services = nlp.words?.entities?.services || [];
+  const petLabel = PET_TYPE_LABELS[user?.petType] || 'animal';
+
+  if (services.includes('complaint') || nlp.emotion === 'frustrated' || nlp.emotion === 'disappointed') {
+    return {
+      content:
+        'Je comprends que la situation vous dérange. Pour un suivi officiel :\n\n' +
+        '• **Réclamations** : décrivez le problème (commande, livraison, produit)\n' +
+        '• **Mes commandes** : statut et historique\n' +
+        '• **Support** : nous recontactons sous 24–48 h ouvrées',
+      quickReplies: ['Réclamation', 'Mes commandes', 'Contacter le support'],
+    };
+  }
+
+  if (services.includes('delivery') || /livraison|colis|expédi/.test(t)) {
+    const orders = await buildOrdersAssistantResponse(userId);
+    return orders;
+  }
+
+  if (services.includes('payment') || /facture|paiement|payer|stripe/.test(t)) {
+    return buildPaymentGuideResponse();
+  }
+
+  if (services.includes('vet') || nlp.anomaly?.primary?.type === 'urgency') {
+    return {
+      content:
+        '🩺 **Santé & urgence**\n\n' +
+        'En cas de symptômes graves (saignement, convulsions, difficulté respiratoire), consultez **immédiatement** un vétérinaire.\n\n' +
+        '• **Santé & Vétérinaire** : RDV, vaccins, dossier médical',
+      quickReplies: ['Contacter vétérinaire', 'Réserver un RDV', 'Dossier médical'],
+      shouldShowVetCTA: true,
+    };
+  }
+
+  if (services.includes('iot')) {
+    return buildAutoFaqResponse('distributeur iot esp32', user);
+  }
+
+  if (services.includes('traceability')) {
+    return buildAutoFaqResponse('traçabilité blockchain', user);
+  }
+
+  if (services.includes('loyalty')) {
+    return buildAutoFaqResponse('fidélité points', user);
+  }
+
+  if (services.includes('product') || nlp.words?.entities?.pets?.length) {
+    const recs = await getRecommendationsForUser(userId, 4, { user });
+    return {
+      content:
+        'Voici des suggestions adaptées à votre profil' +
+        (petLabel ? ` (${petLabel})` : '') +
+        ' d\'après l\'analyse de votre message :',
+      products: recs,
+      quickReplies: ['Autres recommandations', 'Voir les promotions', 'Codes promo disponibles'],
+    };
+  }
+
+  if (nlp.words?.topTerms?.length >= 2) {
+    const terms = nlp.words.topTerms.slice(0, 3).map((x) => x.word).join(', ');
+    return {
+      content:
+        `J\'ai repéré les thèmes : **${terms}**.\n\n` +
+        'Je peux vous orienter vers :\n' +
+        '• **Boutique** & recommandations\n' +
+        '• **Commandes** & livraison\n' +
+        '• **IoT** (distributeur, fontaine)\n' +
+        '• **Vétérinaire** & nutrition\n' +
+        '• **Réclamations** si besoin\n\n' +
+        'Reformulez en une phrase courte ou choisissez un raccourci.',
+      quickReplies: ['Recommandations', 'Mes commandes', 'Centre IoT', 'Guide paiement', 'Réclamation'],
+    };
+  }
+
+  return null;
+}
+
+function buildSmartFallback(user, nlp) {
+  const petLabel = PET_TYPE_LABELS[user?.petType] || 'votre animal';
+  const emotionHint = nlp?.emotionLabel && nlp.emotion !== 'neutral'
+    ? ` (${nlp.emotionLabel.toLowerCase()} détecté)`
+    : '';
+
+  return {
+    content:
+      `Je n\'ai pas identifié une intention précise${emotionHint}. Voici ce que je gère :\n\n` +
+      '• **Produits** & recommandations pour ' + petLabel + '\n' +
+      '• **Commandes**, livraison, **paiement**\n' +
+      '• **IoT** : distributeur ESP32, fontaine connectée\n' +
+      '• **Traçabilité**, fidélité, services, **véto**\n' +
+      '• **Réclamations** & support\n\n' +
+      'Posez une question courte ou utilisez un bouton ci-dessous.',
+    quickReplies: ['Recommandations', 'Mes commandes', 'Centre IoT', 'Codes promo disponibles', 'Guide paiement'],
+  };
 }
 
 function extractPromoCode(text) {
@@ -605,8 +825,12 @@ function buildLivreurAssistantResponse(userMessage, user) {
   };
 }
 
-async function buildResponse(userId, userMessage, user, context = {}) {
+async function buildResponse(userId, userMessage, user, context = {}, nlp = null) {
   user = normalizeUserForChat(user);
+
+  const roleHit = await roleChat.buildRoleResponse(userMessage, user, context, nlp);
+  if (roleHit) return roleHit;
+
   if (user?.role === 'admin') {
     return buildAdminAssistantResponse(userMessage, user);
   }
@@ -854,16 +1078,29 @@ async function buildResponse(userId, userMessage, user, context = {}) {
         recommendedReason: p.recommendedReason,
         icon: p.icon || p.imageUrl || '🛒',
       }));
+      const reviewRecs = await getReviewBasedRecommendations({
+        query: userMessage,
+        animalType: user?.petType || null,
+        limit: 4,
+      });
+      const merged = recs.length ? recs : reviewRecs;
       return {
-        content: aiPack.summary || 'Voici vos recommandations personnalisées 🎁',
-        products: recs.length ? recs : await getRecommendationsForUser(userId, 4, { user, context, email: user?.email }),
+        content: aiPack.summary || 'Voici vos recommandations personnalisées 🎁 (notes clients + profil animal)',
+        products: merged,
         quickReplies: ['Agent IA complet', 'Autres recommandations', 'Voir les promotions', 'Terminer'],
         aiInsightsLink: '/client-ai',
       };
     } catch (aiErr) {
       console.warn('AI recommend fallback:', aiErr.message);
     }
-    const recs = await getRecommendationsForUser(userId, 4, { user, context, email: user?.email });
+    const reviewRecs = await getReviewBasedRecommendations({
+      query: userMessage,
+      animalType: user?.petType || null,
+      limit: 4,
+    });
+    const recs = reviewRecs.length
+      ? reviewRecs
+      : await getRecommendationsForUser(userId, 4, { user, context, email: user?.email });
     return {
       content: 'Voici ce que je vous recommande pour votre ' + user.petType + ' 🎁',
       products: recs,
@@ -917,12 +1154,52 @@ async function buildResponse(userId, userMessage, user, context = {}) {
     };
   }
 
+  if (intent === 'complaint') {
+    return {
+      content:
+        '⚠️ **Réclamation**\n\n' +
+        'Décrivez votre problème (commande, livraison, produit, service). Notre équipe traite les dossiers sous **24–48 h**.\n\n' +
+        '• Menu **Réclamations** pour ouvrir un ticket',
+      quickReplies: ['Réclamation', 'Mes commandes', 'Contacter le support'],
+    };
+  }
+
+  if (intent === 'iot') {
+    const faq = buildAutoFaqResponse('distributeur iot esp32 connecté', user);
+    if (faq) return faq;
+  }
+
+  if (intent === 'traceability') {
+    const faq = buildAutoFaqResponse('traçabilité blockchain origine', user);
+    if (faq) return faq;
+  }
+
+  if (intent === 'water') {
+    const faq = buildAutoFaqResponse('fontaine hydratation eau', user);
+    if (faq) return faq;
+  }
+
+  if (intent === 'loyalty') {
+    const faq = buildAutoFaqResponse('fidélité points récompense', user);
+    if (faq) return faq;
+  }
+
+  if (intent === 'services') {
+    const faq = buildAutoFaqResponse('toilettage pension dressage service', user);
+    if (faq) return faq;
+  }
+
   if (!isProfileComplete) {
     const faqIncomplete = buildAutoFaqResponse(userMessage, user);
     if (faqIncomplete) return faqIncomplete;
 
+    const nlpIncomplete = await buildNlpGuidedResponse(userId, userMessage, user, nlp);
+    if (nlpIncomplete) return nlpIncomplete;
+
     return {
-      content: 'Je ne suis pas sûr de comprendre. 😅 Commençons par votre animal : quel type avez-vous ?',
+      content:
+        'Pour des recommandations personnalisées, indiquez d\'abord votre animal. ' +
+        'Sinon je peux déjà vous aider sur **commandes**, **paiement**, **IoT**, **véto** ou **réclamations**.',
       quickReplies: ['🐶 Chien', '🐱 Chat', '🐦 Oiseau', '🐠 Poisson', '🐾 Autre']
     };
   }
@@ -930,10 +1207,90 @@ async function buildResponse(userId, userMessage, user, context = {}) {
   const faqComplete = buildAutoFaqResponse(userMessage, user);
   if (faqComplete) return faqComplete;
 
+  const nlpHit = await buildNlpGuidedResponse(userId, userMessage, user, nlp);
+  if (nlpHit) return nlpHit;
+
+  return buildSmartFallback(user, nlp);
+}
+
+function compactNlpPayload(nlp) {
+  if (!nlp) return null;
   return {
-    content:
-      "Je ne suis pas sûr de comprendre. 😅 Je peux vous aider sur le **catalogue**, les **codes promo**, vos **commandes**, le **paiement** ou votre profil. Que souhaitez-vous ?",
-    quickReplies: ['Recommandations', 'Codes promo disponibles', 'Mes commandes', 'Guide paiement', 'Passer commande']
+    emotion: nlp.emotion,
+    emotionLabel: nlp.emotionLabel,
+    emotionEmoji: nlp.emotionEmoji,
+    sentiment: nlp.sentiment?.label,
+    modelId: nlp.sentiment?.modelId,
+    modelLabel: nlp.sentiment?.modelLabel,
+    confidence: nlp.confidence,
+    keywords: {
+      positive: (nlp.words?.keywords?.positive || []).slice(0, 4),
+      negative: (nlp.words?.keywords?.negative || []).slice(0, 4),
+    },
+    topTerms: (nlp.words?.topTerms || []).slice(0, 5),
+    entities: nlp.words?.entities || {},
+    anomaly: nlp.anomaly?.detected
+      ? {
+          detected: true,
+          type: nlp.anomaly.primary?.type,
+          label: nlp.anomaly.primary?.label,
+          severity: nlp.anomaly.primary?.severity,
+          riskScore: nlp.anomaly.riskScore,
+        }
+      : { detected: false },
+    insight: nlp.insight,
+  };
+}
+
+function applyNlpToChatResponse(response, nlp, user) {
+  if (!nlp || !response) return response;
+
+  let content = response.content;
+  let quickReplies = [...(response.quickReplies || [])];
+  let shouldShowVetCTA = !!response.shouldShowVetCTA;
+
+  const isNegative = ['frustrated', 'disappointed'].includes(nlp.emotion);
+  const isPositive = ['happy', 'satisfied'].includes(nlp.emotion);
+
+  if (isNegative && !/comprends|désolé|desole/i.test(content)) {
+    content = `Je comprends votre ressenti (${nlp.emotionLabel.toLowerCase()}). ${content}`;
+  }
+
+  if (isNegative) {
+    if (user?.role === 'admin') {
+      if (!quickReplies.some((q) => /réclamation/i.test(q))) quickReplies.unshift('Réclamations');
+    } else {
+      if (!quickReplies.some((q) => /réclamation/i.test(q))) quickReplies.unshift('Réclamation');
+      if (!quickReplies.some((q) => /support/i.test(q))) quickReplies.push('Contacter le support');
+    }
+  }
+
+  if (nlp.anomaly?.primary?.type === 'urgency') {
+    shouldShowVetCTA = true;
+    if (!quickReplies.some((q) => /vétérinaire|veterinaire/i.test(q))) {
+      quickReplies.unshift('Contacter vétérinaire');
+    }
+    if (!/urgence/i.test(content)) {
+      content = `⚠️ **Urgence détectée** — si la situation est grave, contactez immédiatement un vétérinaire.\n\n${content}`;
+    }
+  }
+
+  if (nlp.anomaly?.primary?.type === 'toxic') {
+    content = `Merci de rester courtois pour que je puisse vous aider efficacement.\n\n${content}`;
+  }
+
+  if (isPositive && nlp.emotion === 'happy' && !/ravi|content/i.test(content)) {
+    content = `${content}\n\n😊 Ravi que l'expérience soit positive !`;
+  }
+
+  const uniqueReplies = [...new Set(quickReplies)].slice(0, 6);
+
+  return {
+    ...response,
+    content,
+    quickReplies: uniqueReplies,
+    shouldShowVetCTA,
+    nlp: compactNlpPayload(nlp),
   };
 }
 
@@ -956,7 +1313,9 @@ const sendMessage = async (req, res) => {
 
     // context currently used for UI workflow hints (not a real model prompt).
     // Keep it safe/deterministic.
-    const response = await buildResponse(userId, message.trim(), user, context);
+    const nlp = analyzeTextFull(message.trim());
+    let response = await buildResponse(userId, message.trim(), user, context, nlp);
+    response = applyNlpToChatResponse(response, nlp, user);
 
 
     if (!isDemoMode()) {
@@ -989,6 +1348,7 @@ const sendMessage = async (req, res) => {
       quickReplies: response.quickReplies || [],
       shouldShowVetCTA: !!response.shouldShowVetCTA,
       promoCode: response.promoCode || null,
+      nlp: response.nlp || null,
     });
   } catch (error) {
     console.error('Chat message error:', error);
@@ -1012,7 +1372,16 @@ const sendPetMessage = async (req, res) => {
       user = normalizeUserForChat(await prisma.user.findUnique({ where: { id: userId } }));
     }
 
-    const response = await buildPetAssistantResponse(userId, message.trim(), user, context);
+    const nlp = analyzeTextFull(message.trim());
+    let response = await buildPetAssistantResponse(userId, message.trim(), user, context);
+    const faq = buildAutoFaqResponse(message.trim(), user);
+    if (faq) {
+      response = faq;
+    } else {
+      const nlpHit = await buildNlpGuidedResponse(userId, message.trim(), user, nlp);
+      if (nlpHit) response = nlpHit;
+    }
+    response = applyNlpToChatResponse(response, nlp, user);
 
     if (!isDemoMode()) {
       try {
@@ -1043,6 +1412,7 @@ const sendPetMessage = async (req, res) => {
       products: response.products || [],
       quickReplies: response.quickReplies || [],
       shouldShowVetCTA: !!response.shouldShowVetCTA,
+      nlp: response.nlp || null,
     });
   } catch (error) {
     console.error('Pet chat message error:', error);
@@ -1089,9 +1459,51 @@ const clearHistory = async (req, res) => {
   }
 };
 
+const sendPublicMessage = async (req, res) => {
+  try {
+    const { message, role = 'visitor', context = {} } = req.body;
+    if (!message || !String(message).trim()) {
+      return res.status(400).json({ error: 'Message required' });
+    }
+
+    const effectiveRole = role || context?.role || 'visitor';
+    const guestUser = { id: 'guest', role: effectiveRole, name: 'Visiteur' };
+    const nlp = analyzeTextFull(String(message).trim());
+    const mergedContext = { ...context, role: effectiveRole, public: true };
+    let response = await roleChat.buildRoleResponse(
+      String(message).trim(),
+      guestUser,
+      mergedContext,
+      nlp,
+    );
+    if (!response && effectiveRole === 'visitor') {
+      response = await roleChat.buildVisitorResponse(String(message).trim(), guestUser, mergedContext);
+    }
+    if (!response) {
+      response = {
+        content: 'Je peux vous aider sur PetfoodTN. Précisez votre question (produits, vendeur, modération…).',
+        quickReplies: ['Recommandations', 'Catalogue produits', 'Connexion'],
+      };
+    }
+    response = applyNlpToChatResponse(response, nlp, guestUser);
+
+    res.json({
+      message: response.content,
+      products: response.products || [],
+      quickReplies: response.quickReplies || [],
+      shouldShowVetCTA: !!response.shouldShowVetCTA,
+      nlp: response.nlp || null,
+    });
+  } catch (error) {
+    console.error('Public chat error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
 module.exports = {
   sendMessage,
   sendPetMessage,
+  sendPublicMessage,
   getHistory,
   clearHistory
 };

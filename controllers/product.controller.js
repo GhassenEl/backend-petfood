@@ -10,11 +10,28 @@ const handleError = (res, error, defaultStatus = 500) => {
 const getProducts = async (req, res) => {
   try {
     if (isDemoMode()) {
-      return res.json(demoStore.getProducts());
+      const products = demoStore.getProducts();
+      const priceSvc = require('../services/adminPriceGovernance.service');
+      const policy = await priceSvc.getPolicyRecord();
+      return res.json(products.map((p) => priceSvc.enrichProductForClient(p, policy, null)));
     }
 
     const products = await productService.getProducts();
-    res.json(products);
+    try {
+      const priceSvc = require('../services/adminPriceGovernance.service');
+      const policy = await priceSvc.getPolicyRecord();
+      const logs = await priceSvc.listLogs(500);
+      const logByProduct = new Map();
+      logs.forEach((l) => {
+        if (l.status === 'applied' && l.verifiedAt) logByProduct.set(l.productId, l);
+      });
+      return res.json(products.map((p) => {
+        const id = p.id || p._id;
+        return priceSvc.enrichProductForClient(p, policy, logByProduct.get(id));
+      }));
+    } catch {
+      return res.json(products);
+    }
   } catch (error) {
     handleError(res, error);
   }

@@ -7,7 +7,8 @@ const {
 } = require('../services/aiRecommendationAgent.service');
 const { getHealthRecommendations } = require('../services/healthRecommendations.service');
 const { getSalesForecast } = require('../services/salesForecast.service');
-const { runMlBenchmark, runFullMlReport } = require('../services/mlBenchmark.service');
+const { getReviewBasedRecommendations } = require('../services/reviewRecommendation.service');
+const { getVisitorIntelligence } = require('../services/visitorAi.service');
 
 const getDemoUser = (req) => demoStore.getUserById(req.user.id || req.user._id) || req.user;
 
@@ -70,6 +71,55 @@ const getSalesForecastHandler = async (req, res) => {
   }
 };
 
+const getPublicRecommendations = async (req, res) => {
+  try {
+    const query = req.query.q || req.query.query || '';
+    const animalType = req.query.animalType || req.query.petType || null;
+    const category = req.query.category || null;
+    const limit = Math.min(Number(req.query.limit) || 8, 16);
+    const recommendations = await getReviewBasedRecommendations({
+      query,
+      animalType,
+      category,
+      limit,
+    });
+    res.json({
+      recommendations,
+      summary:
+        recommendations.length > 0
+          ? `${recommendations.length} produit(s) classés par notes 1–5, volume d'avis et pertinence NLP.`
+          : 'Aucune recommandation — élargissez votre recherche.',
+      engine: 'review_nlp_v1',
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+};
+
+const getVisitorIntelligenceHandler = async (req, res) => {
+  try {
+    const browsedRaw = req.query.browsedIds || req.query.browsedProductIds || '';
+    const browsedProductIds = String(browsedRaw)
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    const result = await getVisitorIntelligence({
+      query: req.query.q || req.query.query || '',
+      petType: req.query.petType || req.query.animalType || null,
+      breed: req.query.breed || null,
+      ageYears: req.query.ageYears ? Number(req.query.ageYears) : null,
+      weightKg: req.query.weightKg ? Number(req.query.weightKg) : null,
+      browsedProductIds,
+      category: req.query.category || null,
+      limit: Math.min(Number(req.query.limit) || 8, 16),
+    });
+    res.json(result);
+  } catch (error) {
+    handleError(res, error);
+  }
+};
+
 const getMlBenchmarkHandler = async (req, res) => {
   try {
     const months = req.query.months ? Number(req.query.months) : 12;
@@ -95,6 +145,8 @@ const getMlBenchmarkHandler = async (req, res) => {
 module.exports = {
   getInsights,
   getRecommendations,
+  getPublicRecommendations,
+  getVisitorIntelligenceHandler,
   getTopProducts,
   getHealthRecommendationsHandler,
   getSalesForecastHandler,

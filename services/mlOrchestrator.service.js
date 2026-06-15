@@ -170,33 +170,40 @@ const getClientAiPack = async (user) => {
 
   }
 
-
+  if (!rebuyScore && aiReco?.rebuyScore) rebuyScore = aiReco.rebuyScore;
+  if (!topDemand.length || !rebuyScore) {
+    try {
+      const platform = await getPlatformInsights();
+      const userId = String(user.id || user._id);
+      if (!rebuyScore) {
+        rebuyScore = platform.churnPredictions?.find((c) => c.userId === userId) || aiReco?.churnMl || null;
+      }
+      if (!topDemand.length) topDemand = (platform.productDemand || []).slice(0, 5);
+    } catch (err) {
+      console.warn('[ML Orchestrator] client pack fallback:', err.message);
+    }
+  }
 
   const hasMlBoost = Boolean(
-
-    petReco?.recommendations?.some((r) => r.mlBoosted) || mlRanking?.items?.length
-
+    petReco?.recommendations?.some((r) => r.mlBoosted) || mlRanking?.items?.length || rebuyScore
   );
-
-
 
   return {
 
     role: 'client',
 
-    pythonPowered: mlHealth?.ok && hasMlBoost,
+    pythonPowered: Boolean(mlHealth?.ok && hasMlBoost),
 
     groqPowered: Boolean(aiReco?.aiPowered),
 
     models: [
-
+      'product_fit_v1',
+      'churn_logistic_v1',
       mlHealth?.ok ? 'xgboost' : null,
-
       aiReco?.aiPowered ? 'groq' : null,
-
       'rules_scoring',
-
     ].filter(Boolean),
+    mlPowered: true,
 
     summary: aiReco?.summary || petReco?.recommendations?.[0]?.recommendedReason,
 
@@ -307,11 +314,14 @@ const getClientMlAgentPack = async (user) => {
     pythonPowered,
     groqPowered: Boolean(personalized?.aiPowered),
     models: [
+      'product_fit_v1',
+      'churn_logistic_v1',
       pythonPowered ? 'xgboost' : null,
       personalized?.aiPowered ? 'groq' : null,
       'pet_scoring',
       'rules_scoring',
     ].filter(Boolean),
+    mlPowered: true,
     summary: personalized?.summary || petReco?.recommendations?.[0]?.recommendedReason,
     trends: personalized?.trends,
     preferences: personalized?.preferences,
@@ -423,13 +433,15 @@ const getAdminMlAgentPack = async () => {
     pythonPowered: Boolean(insights.pythonPowered || mlHealth?.ok || riskMap.pythonPowered),
     groqPowered: Boolean(topReport?.aiPowered),
     models: [
+      'churn_logistic_v1',
+      'cancel_risk_logistic_v1',
+      'demand_heuristic_v1',
+      'revenue_trend_v1',
+      'anomaly_zscore_v1',
       insights.pythonPowered || mlHealth?.ok ? 'xgboost' : null,
       topReport?.aiPowered ? 'groq' : null,
-      'churn_classifier',
-      'cancel_risk',
-      'demand_forecast',
-      'anomaly_detection',
     ].filter(Boolean),
+    mlPowered: true,
     summary: topReport?.summary || ruleSummary,
     tip: insights.pythonPowered
       ? 'XGBoost + Groq actifs — surveillez les alertes rouges ci-dessous'
@@ -541,9 +553,13 @@ const getLivreurOrdersRiskMap = async (user) => {
 
   return {
     pythonPowered: Boolean(insights.pythonPowered || mlHealth?.ok),
-    models: insights.pythonPowered || mlHealth?.ok
-      ? ['xgboost_cancel', 'route_priority', 'demand_forecast']
-      : ['route_rules'],
+    mlPowered: true,
+    models: [
+      'cancel_risk_logistic_v1',
+      'delivery_priority_v1',
+      'demand_heuristic_v1',
+      insights.pythonPowered || mlHealth?.ok ? 'xgboost' : null,
+    ].filter(Boolean),
     region: region || 'Grand Tunis',
     risks,
     poolPriority,
@@ -631,12 +647,15 @@ const getVetMlAgentPack = async (user) => {
     pythonPowered: Boolean(platform.pythonPowered || mlHealth?.ok),
     groqPowered: Boolean(groqSummary),
     models: [
+      'clinical_logistic_v1',
+      'product_fit_v1',
+      'demand_heuristic_v1',
       platform.pythonPowered || mlHealth?.ok ? 'xgboost' : null,
       groqSummary ? 'groq' : null,
       'senior_care',
-      'demand_forecast',
       'clinical_rules',
     ].filter(Boolean),
+    mlPowered: true,
     summary: groqSummary || ruleSummary,
     tip:
       seniorPets.length > 0
@@ -691,7 +710,14 @@ const getClinicMlAgentPack = async (user) => {
     agent: 'clinic_ml_agent',
     pythonPowered: Boolean(platform.pythonPowered || mlHealth?.ok),
     groqPowered: Boolean(groqSummary),
-    models: ['clinical_rules', 'appointment_scoring', platform.pythonPowered ? 'xgboost' : null, groqSummary ? 'groq' : null].filter(Boolean),
+    models: [
+      'clinical_logistic_v1',
+      'appointment_scoring',
+      'clinical_rules',
+      platform.pythonPowered ? 'xgboost' : null,
+      groqSummary ? 'groq' : null,
+    ].filter(Boolean),
+    mlPowered: true,
     summary: groqSummary || ruleSummary,
     tip:
       stats.vaccinesDueSoon > 0
@@ -782,7 +808,14 @@ const getPharmacyMlAgentPack = async (user) => {
     agent: 'pharmacy_ml_agent',
     pythonPowered: Boolean(platform.pythonPowered || mlHealth?.ok),
     groqPowered: Boolean(groqSummary),
-    models: ['pharmacy_rules', 'dose_calculator', platform.pythonPowered ? 'xgboost' : null, groqSummary ? 'groq' : null].filter(Boolean),
+    models: [
+      'pharmacy_rules',
+      'dose_calculator',
+      'demand_heuristic_v1',
+      platform.pythonPowered ? 'xgboost' : null,
+      groqSummary ? 'groq' : null,
+    ].filter(Boolean),
+    mlPowered: true,
     summary: groqSummary || ruleSummary,
     tip:
       criticalStock.length > 0

@@ -1,8 +1,9 @@
-const clone = (value) => JSON.parse(JSON.stringify(value));
+const { stringifyEventPrizes, DEFAULT_COMPETITION_PRIZES } = require('./eventPrizes');
 const { resolveRegionFromAddress } = require('./regions');
 
 const now = () => new Date().toISOString();
 const createId = (prefix) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const clone = (value) => JSON.parse(JSON.stringify(value));
 
 // demoUsers removed to eliminate demo accounts.
 // Users are created via normal signup/admin flows.
@@ -265,6 +266,20 @@ let store = {
   complaints: [],
   messages: [],
   blogArticles: buildDefaultBlogStore(),
+  eventRegistrations: [
+    {
+      id: 'reg_demo_win_1',
+      eventId: 'event_comp_grand_prix',
+      userId: 'demo_client',
+      petName: 'Max',
+      status: 'winner',
+      entryNumber: 'PF-042',
+      prizeLabel: 'Adoption gratuite — chiot refuge Nabeul',
+      prizeType: 'free_animal',
+      wonAt: new Date(Date.now() - 5 * 86400000).toISOString(),
+      createdAt: new Date(Date.now() - 12 * 86400000).toISOString(),
+    },
+  ],
   foundMeReports: [
     {
       id: 'fm_demo_lost_1',
@@ -429,6 +444,7 @@ const createOrder = (user, payload) => {
   }
 
   const total = Number(items.reduce((sum, item) => sum + item.price * item.quantity, 0).toFixed(2));
+  const deliveryMode = payload.deliveryMode === 'relay' ? 'relay' : 'home';
   const order = {
     _id: createId('ord'),
     userId: { _id: user._id, email: user.email, name: user.name, role: user.role },
@@ -440,6 +456,11 @@ const createOrder = (user, payload) => {
     phone: payload.phone || '',
     region: resolveRegionFromAddress(payload.address),
     deliveryLocation: payload.location || payload.deliveryLocation || null,
+    deliveryMode,
+    deliveryStatus: deliveryMode === 'relay' ? 'awaiting_pickup' : 'pending',
+    relayPointId: payload.relayPointId || null,
+    relayPointName: payload.relayPointName || null,
+    relayPointType: payload.relayPointType || null,
     createdAt: now(),
   };
   store.orders.unshift(order);
@@ -480,16 +501,75 @@ const deleteOrder = (id) => {
   return clone(existing);
 };
 
+const CLIENT_CANCEL_STATUSES = new Set(['pending', 'paid']);
+
+const cancelOrder = (id, user, { reason } = {}) => {
+  const order = store.orders.find((o) => o._id === id || o.id === id);
+  if (!order) return null;
+
+  if (user.role !== 'admin') {
+    const uid = user._id || user.id;
+    const orderUid = order.userId?._id || order.userId?.id || order.userId;
+    if (String(orderUid) !== String(uid)) {
+      return { error: 'Non autorisé à annuler cette commande' };
+    }
+  }
+
+  if (!CLIENT_CANCEL_STATUSES.has(order.status)) {
+    return { error: 'Cette commande ne peut plus être annulée (déjà expédiée ou livrée)' };
+  }
+
+  order.status = 'cancelled';
+  order.deliveryStatus = 'cancelled';
+  order.cancelledAt = now();
+  order.cancelReason = reason || 'Annulée par le client';
+
+  const invoice = store.invoices.find(
+    (inv) => (inv.orderId?._id || inv.orderId?.id || inv.orderId) === id,
+  );
+  if (invoice && invoice.status !== 'paid') {
+    invoice.status = 'cancelled';
+  }
+
+  return clone(order);
+};
+
+const livreurCancelOrder = (id, livreurUserId, { reason } = {}) => {
+  const order = store.orders.find((o) => o._id === id || o.id === id);
+  if (!order) return null;
+
+  if (order.status !== 'shipped') {
+    return { error: 'Seules les courses en livraison peuvent être annulées' };
+  }
+
+  if (order.assignedLivreurId && String(order.assignedLivreurId) !== String(livreurUserId)) {
+    return { error: 'Cette course ne vous est pas assignée' };
+  }
+
+  order.status = 'pending';
+  order.deliveryStatus = 'pending';
+  order.assignedLivreurId = null;
+  order.shippedAt = null;
+  order.livreurCancelReason = reason || 'Course abandonnée par le livreur';
+  return clone(order);
+};
+
 const getInvoices = (user) => {
   if (!user) return clone(store.invoices);
   if (user.role === 'admin') return clone(store.invoices);
-  return clone(store.invoices.filter((invoice) => invoice.userId._id === user._id));
+  return clone(store.invoices.filter((invoice) => {
+    const invUid = invoice.userId && (invoice.userId._id || invoice.userId.id || invoice.userId);
+    const userUid = user._id || user.id;
+    return invUid === userUid;
+  }));
 };
 
 const payInvoice = (user, invoiceId, paymentMethod) => {
   const index = store.invoices.findIndex((invoice) => invoice._id === invoiceId);
   if (index === -1) return null;
-  if (user.role !== 'admin' && store.invoices[index].userId._id !== user._id) return null;
+  const invUserId = store.invoices[index].userId && (store.invoices[index].userId._id || store.invoices[index].userId.id || store.invoices[index].userId);
+  const userUid = user._id || user.id;
+  if (user.role !== 'admin' && invUserId !== userUid) return null;
 
   store.invoices[index].status = 'paid';
   store.invoices[index].paidAt = now();
@@ -992,12 +1072,55 @@ const createPetAppointments = ({ ownerId, count = 10 } = {}) => {
 const createPlatformEvents = ({ ownerId, count = 12 } = {}) => {
   if (!ownerId) return [];
 
+  const adoptionPrizes = stringifyEventPrizes([
+    { id: 'p1', rank: 1, type: 'free_animal', label: 'Adoption gratuite (chiot ou chaton)', description: 'Frais refuge offerts — vaccins inclus' },
+    { id: 'p2', rank: 2, type: 'adoption_voucher', label: 'Bon adoption -50 %', description: 'Valable chez les refuges partenaires' },
+    { id: 'p3', rank: 3, type: 'product_pack', label: 'Kit bienvenue 6 mois', description: 'Croquettes + accessoires' },
+  ]);
+
+  const agilityPrizes = stringifyEventPrizes(DEFAULT_COMPETITION_PRIZES);
+
   const samples = [
+    {
+      id: 'event_comp_grand_prix',
+      type: 'concours',
+      title: 'Grand Prix PetfoodTN — Agility',
+      petName: 'Open',
+      animalType: 'dog',
+      notes: 'Parcours chronométré. Inscription avec le nom de votre chien. Lots : adoption gratuite, packs croquettes, bons d\'achat.',
+      eventVenue: 'Parc Berge Lac, Tunis',
+      eventCapacity: 40,
+      eventPrizes: agilityPrizes,
+      competitionStatus: 'open',
+    },
+    {
+      id: 'event_comp_beaute',
+      type: 'competitions',
+      title: 'Concours beauté canin & félin',
+      petName: 'Open',
+      animalType: 'dog',
+      notes: 'Catégories junior, senior et races tunisiennes (Sloughi).',
+      eventVenue: 'Maison de la Culture, Tunis',
+      eventCapacity: 50,
+      eventPrizes: agilityPrizes,
+      competitionStatus: 'open',
+    },
+    {
+      id: 'event_adoption_nabeul',
+      type: 'journee_adoption',
+      title: 'Journée adoption — chiots & chatons gratuits',
+      petName: 'Tous',
+      animalType: 'other',
+      notes: 'Tirage au sort : 3 adoptions entièrement offertes + kits de démarrage PetfoodTN.',
+      eventVenue: 'Refuge Amis des Pattes, Nabeul',
+      eventCapacity: 80,
+      eventPrizes: adoptionPrizes,
+      competitionStatus: 'open',
+    },
+    { type: 'exposition', title: 'Exposition chats & chiens', petName: 'Luna', animalType: 'dog', notes: 'Stand PetfoodTN + juges internationaux.', eventVenue: 'Cité des Sciences', eventCapacity: 120, eventPrizes: agilityPrizes, competitionStatus: 'open' },
+    { type: 'cadeau', title: 'Tombola fidélité — animal à gagner', petName: 'Tous', animalType: 'other', notes: '1 lapin nain + 5 bons d\'achat à gagner pour les clients inscrits.', eventVenue: 'En ligne', eventCapacity: 200, eventPrizes: adoptionPrizes, competitionStatus: 'open' },
     { type: 'anniversaire', title: 'Anniversaire de Mimi', petName: 'Mimi', animalType: 'cat', notes: 'Gâteau et animations pour chats.' },
-    { type: 'salle de sport', title: 'Séance agility — Rex', petName: 'Rex', animalType: 'dog', notes: 'Parcours agility débutant, 45 min.' },
-    { type: 'competitions', title: 'Concours beauté canin', petName: 'Luna', animalType: 'dog', notes: 'Inscription ouverte — catégorie junior.' },
     { type: 'coiffure', title: 'Toilettage express', petName: 'Oscar', animalType: 'cat', notes: 'Bain + brushing, créneaux 14h-18h.' },
-    { type: 'cadeau', title: 'Offre croquettes -20%', petName: 'Tous', animalType: 'other', notes: 'Promo PetfoodTN ce week-end.' },
     { type: 'autre', title: 'Atelier nutrition', petName: 'Buddy', animalType: 'dog', notes: 'Conseils NutriPro avec un expert.' },
   ];
 
@@ -1009,20 +1132,26 @@ const createPlatformEvents = ({ ownerId, count = 12 } = {}) => {
     const date = new Date(now);
     date.setDate(date.getDate() + (i % 21) + 1);
     date.setHours(10 + (i % 7), (i % 2) * 30, 0, 0);
+    const eventId = sample.id || createId(`event_${ownerId}`);
 
     events.push({
-      _id: createId(`event_${ownerId}`),
-      id: createId(`event_${ownerId}`),
-      ownerId: i % 4 === 0 ? ownerId : ownerId,
+      _id: eventId,
+      id: eventId,
+      ownerId,
       petName: sample.petName,
       title: sample.title,
       animalType: sample.animalType,
       type: sample.type,
       category: 'event',
-      isPublic: i % 3 !== 1,
+      isPublic: true,
       date: date.toISOString(),
       status: i % 4 === 0 ? 'confirmed' : 'scheduled',
       notes: sample.notes,
+      eventVenue: sample.eventVenue || null,
+      eventCapacity: sample.eventCapacity ?? null,
+      eventPrizes: sample.eventPrizes || null,
+      competitionStatus: sample.competitionStatus || 'open',
+      registrationsCount: (store.eventRegistrations || []).filter((r) => r.eventId === eventId).length || (i % 7),
       meetingLink: i % 5 === 0 ? `https://meet.google.com/demo-${i}` : null,
       reminderSent: false,
       createdAt: now.toISOString(),
@@ -1031,6 +1160,40 @@ const createPlatformEvents = ({ ownerId, count = 12 } = {}) => {
   }
 
   return events;
+};
+
+const registerDemoEvent = ({ eventId, userId, petName }) => {
+  const existing = (store.eventRegistrations || []).find(
+    (r) => r.eventId === eventId && r.userId === userId,
+  );
+  if (existing) return { error: 'Déjà inscrit à cet événement', existing: clone(existing) };
+
+  const entryNumber = `PF-${String((store.eventRegistrations?.length || 0) + 1).padStart(3, '0')}`;
+  const reg = {
+    id: createId('reg'),
+    eventId,
+    userId,
+    petName: petName || null,
+    status: 'registered',
+    entryNumber,
+    prizeLabel: null,
+    prizeType: null,
+    wonAt: null,
+    createdAt: now(),
+  };
+  store.eventRegistrations = store.eventRegistrations || [];
+  store.eventRegistrations.push(reg);
+  return { registration: clone(reg) };
+};
+
+const getDemoEventRegistrationsForUser = (userId) =>
+  clone((store.eventRegistrations || []).filter((r) => r.userId === userId));
+
+const getDemoEventRegistration = (eventId, userId) => {
+  const row = (store.eventRegistrations || []).find(
+    (r) => r.eventId === eventId && r.userId === userId,
+  );
+  return row ? clone(row) : null;
 };
 
 const getBlogArticles = ({ publishedOnly = false } = {}) => {
@@ -1133,6 +1296,8 @@ module.exports = {
   createOrder,
   updateOrder,
   deleteOrder,
+  cancelOrder,
+  livreurCancelOrder,
   getInvoices,
   payInvoice,
   getReviews,
@@ -1161,6 +1326,9 @@ module.exports = {
   updateVeterinaryContactRequest,
   createPetAppointments,
   createPlatformEvents,
+  registerDemoEvent,
+  getDemoEventRegistrationsForUser,
+  getDemoEventRegistration,
   getBlogArticles,
   createBlogArticle,
   updateBlogArticle,

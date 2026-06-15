@@ -1,6 +1,7 @@
 const { prisma, isDemoMode } = require('../prismaClient');
 const { completionWithSystem } = require('./groq.service');
 const { analyzeOwnerEmotionText } = require('./ownerEmotionAnalysis.service');
+const { predictIncidentPriority, mergeMlIncident } = require('../ml/incidentPriorityModel');
 
 const INCIDENT_SYSTEM = `Tu es l'agent de résolution d'incidents PetfoodTN (Tunisie).
 Analyse la réclamation client et propose une résolution professionnelle en français.
@@ -147,10 +148,19 @@ const analyzeIncident = async (complaint, context) => {
   );
 
   const groq = raw ? parseGroqIncident(raw) : null;
+  let merged = base;
   if (groq && groq.proposedResponse) {
-    return { ...base, ...groq, confidence: Math.max(base.confidence, groq.confidence) };
+    merged = { ...base, ...groq, confidence: Math.max(base.confidence, groq.confidence), groqPowered: true };
   }
-  return base;
+
+  const ml = predictIncidentPriority({
+    subject: complaint.subject,
+    message: complaint.message,
+    priorCount: context.priorCount,
+    emotion: context.emotionAnalysis?.emotion || 'neutral',
+    orderTotal: Number(context.order?.total || 0),
+  });
+  return mergeMlIncident(merged, ml);
 };
 
 const applyAiProposal = async (complaintId, analysis) => {
@@ -323,6 +333,8 @@ const getIncidentAgentPack = async () => {
 
   return {
     ...queue,
+    models: ['incident_logistic_v1', 'groq', 'emotion_rules'],
+    mlPowered: true,
     summary: `${awaiting} incident(s) proposé(s) par l'IA en attente de votre validation. ${pending} encore non traité(s) par l'agent.`,
     tip: 'Validez ou rejetez chaque proposition avant envoi officiel au client.',
     platformStats: {

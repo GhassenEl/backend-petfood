@@ -1,6 +1,7 @@
 const { isDemoMode } = require('../prismaClient');
 const demoStore = require('../utils/demoStore');
 const orderService = require('../services/order.service');
+const { emitPlatformPulse } = require('../utils/platformPulse');
 
 const getUserId = (req) => req.user?.id || req.user?._id || req.user?.userId;
 
@@ -43,10 +44,12 @@ const createOrder = async (req, res) => {
   try {
     if (isDemoMode()) {
       const result = demoStore.createOrder(req.user, req.body);
+      emitPlatformPulse('order_created');
       return res.status(201).json(result);
     }
 
     const result = await orderService.createOrder(getUserId(req), req.body);
+    emitPlatformPulse('order_created');
     res.status(201).json(result);
   } catch (error) {
     handleError(res, error, error.status || 400);
@@ -127,6 +130,24 @@ const deleteOrder = async (req, res) => {
   }
 };
 
+const cancelOrder = async (req, res) => {
+  try {
+    const { reason } = req.body || {};
+
+    if (isDemoMode()) {
+      const result = demoStore.cancelOrder(req.params.id, req.user, { reason });
+      if (!result) return res.status(404).json({ error: 'Commande introuvable' });
+      if (result.error) return res.status(400).json({ error: result.error });
+      return res.json(result);
+    }
+
+    const order = await orderService.cancelOrder(req.params.id, req.user, { reason });
+    res.json(order);
+  } catch (error) {
+    handleError(res, error, error.status || 400);
+  }
+};
+
 const getOrderTracking = async (req, res) => {
   try {
     if (isDemoMode()) {
@@ -154,5 +175,6 @@ module.exports = {
   updateOrder,
   updateOrderStatus,
   deleteOrder,
+  cancelOrder,
   getOrderTracking,
 };

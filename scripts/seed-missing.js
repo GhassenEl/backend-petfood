@@ -5,6 +5,7 @@ const {
   demoProducts,
   generateOrders,
   generateMessages,
+  generateInvoices,
   createVeterinaryContactRequests,
   createVeterinaryRecords,
   createPetAppointments,
@@ -437,24 +438,52 @@ async function ensureVeterinaryData() {
 }
 
 async function ensureOrdersAndMessages() {
-  const anyUser = await prisma.user.findFirst({
-    where: { role: { in: ['livreur', 'client', 'admin'] } },
-  });
-  if (!anyUser) return;
+  const clientUser = await prisma.user.findFirst({ where: { role: 'client' } });
+  const livreurUser = await prisma.user.findFirst({ where: { role: 'livreur' } });
+  const adminUser = await prisma.user.findFirst({ where: { role: 'admin' } });
+  const vetUser = await prisma.user.findFirst({ where: { role: 'vet' } });
+  if (!clientUser) return;
+
+  const users = await prisma.user.findMany({ select: { id: true, email: true, role: true } });
+  const resolveDemoUserId = (demoId, type) => {
+    const map = {
+      demo_admin: adminUser?.id,
+      demo_client: clientUser?.id,
+      demo_livreur: livreurUser?.id,
+      demo_vet: vetUser?.id,
+    };
+    if (map[demoId]) return map[demoId];
+    if (typeof demoId === 'string' && demoId.includes('@')) {
+      const user = users.find((u) => u.email === demoId);
+      return user?.id;
+    }
+    const roleMatch = users.find((u) => u.role === type);
+    return roleMatch?.id;
+  };
 
   if ((await prisma.order.count()) === 0) {
     const orders = generateOrders(50);
     for (const order of orders) {
+      const resolvedRegion = order.region || resolveRegionFromAddress(order.address);
+      const regionLivreur = resolvedRegion
+        ? await prisma.user.findFirst({ where: { role: 'livreur', region: resolvedRegion } })
+        : null;
+      const assignedLivreurId =
+        order.status !== 'pending' && order.status !== 'cancelled'
+          ? regionLivreur?.id || livreurUser?.id
+          : null;
+
       await prisma.order.create({
         data: {
-          userId: anyUser.id,
+          userId: clientUser.id,
           total: Number(order.total),
           status: order.status,
           paymentMethod: order.paymentMethod,
           address: order.address,
           phone: order.phone,
-          region: order.region || resolveRegionFromAddress(order.address),
+          region: resolvedRegion,
           deliveryLocation: order.deliveryLocation || {},
+          assignedLivreurId,
           createdAt: new Date(order.createdAt),
           updatedAt: new Date(order.updatedAt || order.createdAt),
           items: {
@@ -470,22 +499,51 @@ async function ensureOrdersAndMessages() {
     console.log(`✅ ${orders.length} order(s) created`);
   }
 
+  if ((await prisma.invoice.count()) === 0) {
+    const orders = await prisma.order.findMany();
+    const invoices = generateInvoices(orders);
+    if (invoices.length) {
+      await prisma.invoice.createMany({
+        data: invoices.map((inv) => ({
+          userId: inv.userId,
+          orderId: inv.orderId,
+          amount: inv.amount,
+          status: inv.status,
+          paymentMethod: inv.paymentMethod,
+          issuedAt: new Date(inv.issuedAt),
+          paidAt: inv.paidAt ? new Date(inv.paidAt) : null,
+        }))
+      });
+    }
+    console.log(`✅ ${invoices.length} facture(s) created`);
+  }
+
   if ((await prisma.message.count()) === 0) {
+    const users = await prisma.user.findMany({ select: { id: true, email: true, role: true } });
     const messages = generateMessages();
-    await prisma.message.createMany({
-      data: messages.map((msg) => ({
-        senderType: msg.sender.type,
-        senderId: msg.sender.userId,
-        receiverType: msg.receiver.type,
-        receiverId: msg.receiver.userId,
-        orderId: msg.orderId || null,
-        message: msg.message,
-        isRead: Boolean(msg.isRead),
-        createdAt: new Date(msg.createdAt),
-        updatedAt: msg.updatedAt ? new Date(msg.updatedAt) : new Date(msg.createdAt),
-      })),
-    });
-    console.log(`✅ ${messages.length} message(s) created`);
+    const validMessages = messages
+      .map((msg) => {
+        const senderId = resolveDemoUserId(msg.sender?.userId, msg.sender?.type);
+        const receiverId = resolveDemoUserId(msg.receiver?.userId, msg.receiver?.type);
+        if (!senderId || !receiverId) return null;
+        return {
+          senderType: msg.sender.type,
+          senderId,
+          receiverType: msg.receiver.type,
+          receiverId,
+          orderId: msg.orderId || null,
+          message: msg.message,
+          isRead: Boolean(msg.isRead),
+          createdAt: new Date(msg.createdAt),
+          updatedAt: msg.updatedAt ? new Date(msg.updatedAt) : new Date(msg.createdAt),
+        };
+      })
+      .filter(Boolean);
+
+    if (validMessages.length) {
+      await prisma.message.createMany({ data: validMessages });
+    }
+    console.log(`✅ ${validMessages.length} message(s) created`);
   }
 }
 

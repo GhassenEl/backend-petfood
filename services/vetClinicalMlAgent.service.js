@@ -1,5 +1,6 @@
 const { prisma, isDemoMode } = require('../prismaClient');
 const { analyzePetAnomalies, buildPetProfile } = require('./vetPetDiagnosis.service');
+const { analyzeEarlyDiseaseRisk } = require('./earlyDiseaseDetection.service');
 const { getPetTimeline } = require('./clinicalAlerts.service');
 const { createDossierFromPet, addEntry } = require('./medicalDossier.service');
 const { completionWithSystem, VET_SYSTEM_PROMPT } = require('./groq.service');
@@ -162,12 +163,18 @@ const getClinicalMlAgentPack = async (user) => {
     agent: 'vet_clinical_anomaly_agent',
     pythonPowered: Boolean(mlHealth?.ok),
     groqPowered: Boolean(groqSummary),
-    models: ['groq', 'clinical_rules', 'pet_history', mlHealth?.ok ? 'xgboost' : null].filter(Boolean),
+    models: [
+      'clinical_logistic_v1',
+      'groq',
+      'clinical_rules',
+      'pet_history',
+      mlHealth?.ok ? 'xgboost' : null,
+    ].filter(Boolean),
     summary: groqSummary || ruleSummary,
     tip:
       urgentCount > 0
         ? `${urgentCount} analyse(s) urgente(s) — prioriser consultation et dossier médical`
-        : 'Analysez symptômes, créez ordonnance et archivez dans le dossier patient',
+        : 'Détection précoce : saisissez les symptômes pour obtenir le niveau de risque IA',
     stats: {
       recentAnalyses: recent.length,
       urgentLast7Days: urgentCount,
@@ -209,6 +216,28 @@ const runClinicalAnalysis = async (user, body) => {
   });
 
   const enriched = enrichAnalysis(raw);
+
+  const earlyDetection = await analyzeEarlyDiseaseRisk({
+    ownerId,
+    petId,
+    petName: petName || enriched.profile?.pet?.name,
+    animalType: animalType || enriched.profile?.pet?.type,
+    symptoms: String(symptoms).trim(),
+    vitals: vitals || {},
+    profile: enriched.profile,
+  }).catch(() => null);
+
+  if (earlyDetection) {
+    enriched.earlyDetection = earlyDetection;
+    if (earlyDetection.riskLevel === 'critical' || earlyDetection.riskLevel === 'high') {
+      enriched.urgencyClass = 'urgent';
+      enriched.urgency = 'urgent';
+      enriched.diseaseSuspected = true;
+    } else if (earlyDetection.riskLevel === 'medium' && enriched.urgency === 'routine') {
+      enriched.urgency = 'soon';
+    }
+  }
+
   const saved = await persistAnalysis(vetId, { ownerId, petId, petName, animalType, symptoms, vitals }, enriched);
 
   let timeline = [];

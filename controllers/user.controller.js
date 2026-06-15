@@ -1,7 +1,7 @@
 const bcrypt = require('bcryptjs');
 const { prisma, isDemoMode } = require('../prismaClient');
 const demoStore = require('../utils/demoStore');
-const { DELIVERY_REGIONS, resolveRegionFromAddress } = require('../utils/regions');
+const { DELIVERY_REGIONS, resolveRegionFromAddress } = require('../utils/tunisiaCities');
 const { assertSingleAdminPolicy } = require('../utils/singleAdmin');
 
 const USER_SELECT = {
@@ -400,74 +400,24 @@ const getUserCount = async (req, res) => {
 };
 
 const getStoreLocations = async (req, res) => {
-  const COMPANY_STORES = [
-    {
-      id: 'lac1',
-      name: 'PetfoodTN Lac 1',
-      address: 'Lac 1 Tunis, Immeuble El Hana',
-      lat: 36.8370,
-      lng: 10.2420,
-      phone: '+216 71 960 000',
-      hours: '09:00 - 21:00'
-    },
-    {
-      id: 'ariana',
-      name: 'PetfoodTN Ariana',
-      address: 'Route Ariana La Soukra',
-      lat: 36.8550,
-      lng: 10.1960,
-      phone: '+216 71 717 171',
-      hours: '08:00 - 20:00'
-    },
-    {
-      id: 'marsa',
-      name: 'PetfoodTN La Marsa',
-      address: 'Av. Habib Bourguiba, La Marsa',
-      lat: 36.8670,
-      lng: 10.3200,
-      phone: '+216 71 745 000',
-      hours: '09:00 - 22:00'
-    },
-    {
-      id: 'sfax',
-      name: 'PetfoodTN Sfax',
-      address: 'Route Sfax Gabès Km 4',
-      lat: 34.7406,
-      lng: 10.7603,
-      phone: '+216 74 294 000',
-      hours: '08:30 - 19:30'
-    }
-  ];
-
-  const { lat, lng, radius = 20 } = req.query;
-  let stores = COMPANY_STORES;
-
-  if (lat && lng) {
-    const haversine = (lat1, lng1, lat2, lng2) => {
-      const R = 6371;
-      const dLat = (lat2 - lat1) * Math.PI / 180;
-      const dLng = (lng2 - lng1) * Math.PI / 180;
-      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                Math.sin(dLng/2) * Math.sin(dLng/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      return R * c;
-    };
-
-    stores = COMPANY_STORES.filter(store =>
-      haversine(parseFloat(lat), parseFloat(lng), store.lat, store.lng) <= parseFloat(radius)
-    ).sort((a, b) => {
-      const distA = haversine(parseFloat(lat), parseFloat(lng), a.lat, a.lng);
-      const distB = haversine(parseFloat(lat), parseFloat(lng), b.lat, b.lng);
-      return distA - distB;
-    });
+  try {
+    const citySvc = require('../services/platformCities.service');
+    const stores = await citySvc.getStoreLocations(req.query);
+    res.json(stores);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
-
-  res.json(stores);
 };
 
 const getDeliveryRegions = async (_req, res) => {
-  res.json(DELIVERY_REGIONS);
+  try {
+    const citySvc = require('../services/platformCities.service');
+    const pack = await citySvc.getPublicCities();
+    const regions = pack.cities.map((c) => c.name);
+    res.json(regions.length ? regions : DELIVERY_REGIONS);
+  } catch {
+    res.json(DELIVERY_REGIONS);
+  }
 };
 
 module.exports = {

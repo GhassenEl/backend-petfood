@@ -7,6 +7,7 @@ const {
   claimOrder,
   getActiveMission,
   completeDelivery,
+  cancelDelivery,
 } = require('../services/livreur.service');
 const { getLivreurOrdersRiskMap } = require('../services/mlOrchestrator.service');
 const { isDemoMode } = require('../prismaClient');
@@ -131,6 +132,22 @@ const complete = async (req, res) => {
   }
 };
 
+const cancel = async (req, res) => {
+  try {
+    const { reason } = req.body || {};
+    if (isDemoMode()) {
+      const result = demoStore.livreurCancelOrder(req.params.orderId, getUserId(req), { reason });
+      if (!result) return res.status(404).json({ error: 'Commande introuvable' });
+      if (result.error) return res.status(400).json({ error: result.error });
+      return res.json(result);
+    }
+    const data = await cancelDelivery(getUserId(req), req.params.orderId, { reason });
+    res.json(data);
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message || 'Annulation de course échouée' });
+  }
+};
+
 module.exports = {
   dashboard,
   routePlan,
@@ -140,4 +157,5 @@ module.exports = {
   mission,
   claim,
   complete,
+  cancel,
 };

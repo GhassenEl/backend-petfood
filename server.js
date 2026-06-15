@@ -91,6 +91,18 @@ app.use((req, res, next) => {
 });
 app.use(express.json());
 
+const { requestMetricsMiddleware } = require('./middleware/requestMetrics.middleware');
+app.use(requestMetricsMiddleware);
+
+const { intrusionDetectionMiddleware } = require('./middleware/intrusionDetection.middleware');
+const { threatScanMiddleware } = require('./middleware/threatScan.middleware');
+app.use('/api', intrusionDetectionMiddleware);
+app.use('/api', (req, res, next) => {
+  if (!['POST', 'PUT', 'PATCH'].includes(req.method)) return next();
+  if (req.path.startsWith('/security/scan')) return next();
+  return threatScanMiddleware({ source: 'api_body_scan' })(req, res, next);
+});
+
 const initDatabase = async () => {
   try {
     if (!isDemoMode()) {
@@ -156,6 +168,10 @@ const tryListen = (port) => {
     },
   });
   setNotificationIo(io);
+  const { setPerformanceIo } = require('./services/platformPerformance.service');
+  setPerformanceIo(io);
+  const { startPlatformPulse } = require('./utils/platformPulse');
+  startPlatformPulse(io, 12000);
 
   io.on('connection', (socket) => {
     console.log(' Socket connected:', socket.id);
@@ -212,10 +228,21 @@ const tryListen = (port) => {
 
   httpServer.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
-      console.warn(`⚠️ Port ${port} already in use. Trying next port...`);
-      // Try next port
-      tryListen(port + 1);
-      return;
+      const allowFallback =
+        String(process.env.ALLOW_PORT_FALLBACK || 'false').toLowerCase() === 'true';
+      if (allowFallback && port < BASE_PORT + 5) {
+        console.warn(`⚠️ Port ${port} occupé — tentative ${port + 1} (ALLOW_PORT_FALLBACK=true)`);
+        tryListen(port + 1);
+        return;
+      }
+      console.error(
+        `\n❌ Port ${port} déjà utilisé. Le frontend (proxy Vite) attend ce port (backend/.env PORT=${BASE_PORT}).\n` +
+          `   Arrêtez l’ancien processus Node, puis relancez :\n` +
+          `   PowerShell: Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | ` +
+          `ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }\n` +
+          `   Ou définissez ALLOW_PORT_FALLBACK=true et alignez VITE_API_PROXY_TARGET sur le nouveau port.\n`
+      );
+      process.exit(1);
     }
 
     console.error('Server failed to start:', err.message);

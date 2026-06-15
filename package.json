@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "free-port": "powershell -ExecutionPolicy Bypass -File scripts/free-port.ps1",
     "dev:gateway": "nodemon server.js",
     "seed": "node seed.js",
     "seed:missing": "node scripts/seed-missing.js",
@@ -16,7 +17,7 @@
     "postgres:up": "docker compose up -d",
     "postgres:down": "docker compose down",
     "test:api": "node scripts/test-wallet-api.js",
-    "test:ml": "node --test tests/ml-architectures.test.js",
+    "test:ml": "node --test tests/ml-architectures.test.js tests/ml-clinical-urgency.test.js tests/ml-platform-models.test.js",
     "ml:benchmark": "node scripts/test-ml-models.js"
   },
   "dependencies": {
@@ -24,12 +25,12 @@
     "@stripe/react-stripe-js": "^6.2.0",
     "@stripe/stripe-js": "^9.3.1",
     "bcryptjs": "^2.4.3",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
+    "cors": "^2.8.6",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.2",
     "express-rate-limit": "^8.4.0",
     "firebase-admin": "^13.10.0",
-    "jsonwebtoken": "^9.0.2",
+    "jsonwebtoken": "^9.0.3",
     "socket.io": "^4.7.2",
     "stripe": "^22.1.0"
   },

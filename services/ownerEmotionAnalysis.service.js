@@ -1,5 +1,7 @@
 const { prisma } = require('../prismaClient');
 const { completionWithSystem } = require('./groq.service');
+const { analyzeTextFull } = require('./nlpTextAnalysis.service');
+const { emotionToSentiment } = require('./commentSentiment.service');
 const {
   OWNER_EMOTIONS,
   PLATFORM_SERVICES,
@@ -87,6 +89,23 @@ const analyzeOwnerEmotionText = async ({ text, serviceType, rating }) => {
   const trimmed = String(text || '').trim();
   let result = analyzeByKeywords(trimmed);
 
+  if (trimmed) {
+    const nlp = analyzeTextFull(trimmed);
+    const nlpConfidence = nlp.confidence || 0.6;
+    if (nlpConfidence >= (result.confidence || 0)) {
+      result = {
+        ...result,
+        emotion: nlp.emotion,
+        confidence: nlpConfidence,
+        sentiment: nlp.sentiment?.label,
+        source: `nlp:${nlp.sentiment?.modelId || 'active'}`,
+        summary: nlp.insight,
+        nlpWords: nlp.words,
+        nlpAnomaly: nlp.anomaly,
+      };
+    }
+  }
+
   const python = trimmed ? await fetchPythonSentiment(trimmed, serviceType) : null;
   if (python && (python.confidence || 0) >= (result.confidence || 0)) {
     result = { ...result, ...python };
@@ -111,6 +130,8 @@ const analyzeOwnerEmotionText = async ({ text, serviceType, rating }) => {
 
   result.emotionLabel = emotionMeta(result.emotion).label;
   result.emotionEmoji = emotionMeta(result.emotion).emoji;
+  result.sentiment = result.sentiment || emotionToSentiment(result.emotion);
+  result.sentimentScore = result.confidence;
   result.serviceType = serviceType || null;
   return result;
 };

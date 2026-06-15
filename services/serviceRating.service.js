@@ -1,6 +1,9 @@
 const { prisma } = require('../prismaClient');
-const { RATING_SERVICE_TYPES } = require('../utils/ownerEmotionConstants');
+const { RATING_SERVICE_TYPES, BOOKING_SERVICE_TYPES } = require('../utils/ownerEmotionConstants');
 const { analyzeOwnerEmotionText } = require('./ownerEmotionAnalysis.service');
+const { emotionFromRating } = require('../utils/ratingHelpers');
+const { analyzeCommentText, emotionToSentiment } = require('./commentSentiment.service');
+const { persistServiceRatingSentiment } = require('./commentSentimentAnalytics.service');
 
 const resolveOwnerId = (value) => {
   if (value == null) return null;
@@ -97,15 +100,12 @@ const getEligibleTargets = async (userId) => {
   });
 
   const serviceBookings = pastServiceAppointments || [];
-  const grooming = serviceBookings
-    .filter((a) => a.type === 'grooming' && !ratedBookings.has(a.id))
-    .map(mapServiceBooking);
-  const boarding = serviceBookings
-    .filter((a) => a.type === 'boarding' && !ratedBookings.has(a.id))
-    .map(mapServiceBooking);
-  const training = serviceBookings
-    .filter((a) => a.type === 'training' && !ratedBookings.has(a.id))
-    .map(mapServiceBooking);
+  const bookingEligible = {};
+  for (const type of BOOKING_SERVICE_TYPES) {
+    bookingEligible[type] = serviceBookings
+      .filter((a) => a.type === type && !ratedBookings.has(a.id))
+      .map(mapServiceBooking);
+  }
 
   return {
     delivery: deliveredOrders
@@ -128,9 +128,10 @@ const getEligibleTargets = async (userId) => {
         vetId: a.vetId,
         vetName: a.vet?.name || null,
       })),
-    grooming,
-    boarding,
-    training,
+    ...bookingEligible,
+    grooming: bookingEligible.grooming || [],
+    boarding: bookingEligible.boarding || [],
+    training: bookingEligible.training || [],
   };
 };
 
@@ -145,11 +146,13 @@ const createRating = async (user, payload) => {
     throw error;
   }
 
-  let emotion = payload.emotion || 'neutral';
+  let emotion = payload.emotion || emotionFromRating(rating);
+  let sentiment = emotionToSentiment(emotion);
   let sentimentScore = null;
   let aiSuggested = Boolean(payload.aiSuggested);
 
   if (payload.comment?.trim()) {
+    const commentAnalysis = analyzeCommentText(payload.comment, { emotion });
     const analysis = await analyzeOwnerEmotionText({
       text: payload.comment,
       serviceType: type,
@@ -159,7 +162,11 @@ const createRating = async (user, payload) => {
       emotion = analysis.emotion;
       aiSuggested = true;
     }
-    sentimentScore = analysis.confidence ?? null;
+    sentiment = commentAnalysis.sentiment || analysis.sentiment || emotionToSentiment(emotion);
+    sentimentScore = commentAnalysis.confidence ?? analysis.confidence ?? null;
+  } else {
+    sentiment = emotionToSentiment(emotion);
+    sentimentScore = rating >= 4 ? 0.72 : rating <= 2 ? 0.65 : 0.5;
   }
   if (rating < 1 || rating > 5) {
     const error = new Error('La note doit être entre 1 et 5');
@@ -220,7 +227,7 @@ const createRating = async (user, payload) => {
     region = region || appt.vet?.region || null;
   }
 
-  if (['grooming', 'boarding', 'training'].includes(type)) {
+  if (BOOKING_SERVICE_TYPES.includes(type)) {
     bookingId = payload.bookingId;
     if (!bookingId) {
       const error = new Error('bookingId requis pour noter ce service');
@@ -252,6 +259,7 @@ const createRating = async (user, payload) => {
       rating,
       comment: payload.comment?.trim() || null,
       emotion,
+      sentiment,
       sentimentScore,
       aiSuggested,
       region,

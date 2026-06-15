@@ -1,5 +1,8 @@
 const { prisma, isDemoMode } = require('../prismaClient');
 const demoStore = require('../utils/demoStore');
+const { emotionFromRating, clampRating } = require('../utils/ratingHelpers');
+const { analyzeOwnerEmotionText } = require('../services/ownerEmotionAnalysis.service');
+const { analyzeCommentText, emotionToSentiment } = require('../services/commentSentiment.service');
 
 const getUserId = (req) => req.user?.id || req.user?._id || req.user?.userId;
 
@@ -89,14 +92,47 @@ const createReview = async (req, res) => {
       mappedProductId = eventProductId;
     }
 
+    const rating = clampRating(req.body.rating);
+    if (!rating) {
+      return res.status(400).json({ error: 'La note doit être entre 1 et 5' });
+    }
+
+    let emotion = req.body.emotion || emotionFromRating(rating);
+    let aiSuggested = Boolean(req.body.aiSuggested);
+    let sentiment = emotionToSentiment(emotion);
+    let sentimentScore = null;
+
+    if (req.body.comment?.trim()) {
+      try {
+        const commentAnalysis = analyzeCommentText(req.body.comment, { emotion });
+        const analysis = await analyzeOwnerEmotionText({
+          text: req.body.comment,
+          serviceType: 'products',
+          rating,
+        });
+        if (!req.body.emotion || req.body.aiSuggested) {
+          emotion = analysis.emotion;
+          aiSuggested = true;
+        }
+        sentiment = commentAnalysis.sentiment || analysis.sentiment || emotionToSentiment(emotion);
+        sentimentScore = commentAnalysis.confidence ?? analysis.confidence ?? null;
+      } catch {
+        sentiment = emotionToSentiment(emotion);
+      }
+    } else {
+      sentiment = emotionToSentiment(emotion);
+    }
+
     const review = await prisma.review.create({
       data: {
         userId: req.user.role === 'admin' && req.body.userId ? req.body.userId : getUserId(req),
         productId: mappedProductId,
-        rating: Number(req.body.rating),
+        rating,
         comment: req.body.comment,
-        emotion: req.body.emotion || 'neutral',
-        aiSuggested: req.body.aiSuggested || false
+        emotion,
+        sentiment,
+        sentimentScore,
+        aiSuggested,
       },
       include: {
         user: { select: { id: true, email: true, name: true } },
@@ -142,9 +178,13 @@ const updateReview = async (req, res) => {
     const review = await prisma.review.update({
       where: { id: req.params.id },
       data: {
-        rating: req.body.rating !== undefined ? Number(req.body.rating) : existing.rating,
+        rating: req.body.rating !== undefined ? clampRating(req.body.rating) : existing.rating,
         comment: req.body.comment !== undefined ? req.body.comment : existing.comment,
-        emotion: req.body.emotion !== undefined ? req.body.emotion : existing.emotion,
+        emotion: req.body.emotion !== undefined
+          ? req.body.emotion
+          : req.body.rating !== undefined
+            ? emotionFromRating(req.body.rating)
+            : existing.emotion,
         aiSuggested: req.body.aiSuggested !== undefined ? req.body.aiSuggested : existing.aiSuggested
       },
       include: {

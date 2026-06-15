@@ -1,6 +1,7 @@
 const { prisma } = require('../prismaClient');
 const productRepository = require('../repositories/product.repository');
 const { rankSeniorDogProducts } = require('./mlPlatform.service');
+const { predictProductFit } = require('../ml/productFitModel');
 
 const PET_EMOJI = { dog: '🐕', cat: '🐈', bird: '🐦', fish: '🐟', rabbit: '🐰', other: '🐾' };
 
@@ -258,14 +259,32 @@ const getPetRecommendations = async (user, { petId, petName, limit = 8 } = {}) =
       .map((product) => {
         const result = scoreProductForPet(product, pet, context, profile, boughtIds, positiveIds);
         if (result.skip) return null;
+        const ml = predictProductFit(
+          {
+            id: product.id,
+            name: product.name,
+            description: product.description,
+            category: product.category,
+            animalType: product.animalType,
+            rating_avg: product.rating_avg,
+            popularity: product.popularity,
+            stock: product.stock,
+          },
+          pet,
+          context
+        );
+        if (ml.allergyConflict) return null;
+        const blendedScore = Math.min(1, result.score * 0.62 + (ml.fitScore || 0) * 0.38);
         return {
           ...product,
-          score: result.score,
+          score: blendedScore,
           recommendedReason: result.reasons[0] || 'Recommandé pour votre animal',
-          reasons: result.reasons,
+          reasons: ml.fitScore >= 0.55 ? [...result.reasons, 'Score ML produit-animal'] : result.reasons,
           petId: pet.id,
           petName: pet.name,
           petType: pet.type,
+          mlBoosted: ml.fitScore >= 0.5,
+          mlModel: ml.modelId,
         };
       })
       .filter(Boolean);

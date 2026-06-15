@@ -1,4 +1,5 @@
 const serviceBookingService = require('../services/serviceBooking.service');
+const serviceAfterSaleService = require('../services/serviceAfterSale.service');
 
 const getCatalog = async (_req, res) => {
   res.json(serviceBookingService.getCatalog());
@@ -67,6 +68,24 @@ const estimatePrice = async (req, res) => {
   }
 };
 
+const listAfterSales = async (req, res) => {
+  try {
+    const list = await serviceAfterSaleService.listAfterSales(req.user);
+    res.json({ items: list, types: serviceAfterSaleService.AFTER_SALE_TYPES });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+const createAfterSale = async (req, res) => {
+  try {
+    const item = await serviceAfterSaleService.createAfterSale(req.user, req.body);
+    res.status(201).json(item);
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message });
+  }
+};
+
 module.exports = {
   getCatalog,
   getSlots,
@@ -75,4 +94,6 @@ module.exports = {
   payBooking,
   cancelBooking,
   estimatePrice,
+  listAfterSales,
+  createAfterSale,
 };

@@ -31,11 +31,30 @@ const {
   postApplyDossier: postVetClinicalApplyDossier,
   postApplyPrescription: postVetClinicalApplyPrescription,
 } = require('../controllers/vetClinicalMl.controller');
+const { postEarlyDetection } = require('../controllers/vetEarlyDetection.controller');
+const {
+  getNlpBenchmarkHandler,
+  getNlpConfigHandler,
+  putNlpConfigHandler,
+  postNlpAnalyzeHandler,
+} = require('../controllers/nlpModel.controller');
+const {
+  postAnalyzeComment,
+  getMyCommentSentiments,
+  getAdminCommentSentiments,
+} = require('../controllers/commentSentiment.controller');
 
 const router = express.Router();
 
 router.get('/health', auth, adminAuth, getMlHealth);
 router.get('/admin/insights', auth, adminAuth, getAdminInsights);
+router.get('/admin/nlp-models/benchmark', auth, adminAuth, getNlpBenchmarkHandler);
+router.get('/admin/nlp-models/config', auth, adminAuth, getNlpConfigHandler);
+router.put('/admin/nlp-models/config', auth, adminAuth, putNlpConfigHandler);
+router.post('/nlp/analyze', auth, postNlpAnalyzeHandler);
+router.post('/sentiment/comment', auth, postAnalyzeComment);
+router.get('/sentiment/comments/me', auth, getMyCommentSentiments);
+router.get('/sentiment/comments', auth, adminAuth, getAdminCommentSentiments);
 router.get('/admin/orders-risk', auth, adminAuth, getAdminOrdersRisk);
 router.get('/client/pack', auth, getClientPack);
 router.get('/client/agent', auth, getClientAgentPack);
@@ -49,6 +68,7 @@ router.get('/vet/clinic/agent', auth, vetAuth, getClinicAgentPack);
 router.get('/vet/pharmacy/agent', auth, vetAuth, getPharmacyAgentPack);
 router.get('/vet/clinical/agent', auth, vetAuth, getVetClinicalAgentPack);
 router.post('/vet/clinical/analyze', auth, vetAuth, postVetClinicalAnalyze);
+router.post('/vet/early-detection/analyze', auth, vetAuth, postEarlyDetection);
 router.get('/vet/clinical/patient-context', auth, vetAuth, getVetClinicalPatientContext);
 router.post('/vet/clinical/analyses/:id/apply-dossier', auth, vetAuth, postVetClinicalApplyDossier);
 router.post('/vet/clinical/analyses/:id/apply-prescription', auth, vetAuth, postVetClinicalApplyPrescription);

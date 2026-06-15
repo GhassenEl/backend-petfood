@@ -31,6 +31,33 @@ const SERVICE_CATALOG = [
     durationHours: 1,
     icon: '🎓',
   },
+  {
+    type: 'pet_sitting',
+    label: 'Garde d\'animaux',
+    description: 'Garde à domicile par pet-sitter certifié.',
+    basePrice: 28,
+    unit: 'heure',
+    durationHours: 2,
+    icon: '🏠',
+  },
+  {
+    type: 'dog_walking',
+    label: 'Promenade',
+    description: 'Promeneur canin certifié — sorties sécurisées.',
+    basePrice: 22,
+    unit: 'heure',
+    durationHours: 1,
+    icon: '🦮',
+  },
+  {
+    type: 'home_visit',
+    label: 'Visite à domicile',
+    description: 'Visite de contrôle, repas, jeux à domicile.',
+    basePrice: 35,
+    unit: 'visite',
+    durationHours: 1,
+    icon: '🚪',
+  },
 ];
 
 const demoBookings = [];

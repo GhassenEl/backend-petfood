@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { prisma, isDemoMode } = require('../prismaClient');
 const { normalizeEmail, validateEmail, validatePassword } = require('../utils/authValidation');
+const { recordFailedLogin, resetFailedLogin } = require('../services/intrusionDetection.service');
 
 const demoUsers = {
   'admin@petfood.tn': {
@@ -32,6 +33,20 @@ const demoUsers = {
     name: 'Dr. Salma Khelifi',
     role: 'vet',
     demoPassword: 'Vet2024!'
+  },
+  'moderator@petfood.tn': {
+    _id: 'demo_moderator',
+    email: 'moderator@petfood.tn',
+    name: 'Nour Modération',
+    role: 'moderator',
+    demoPassword: 'Mod2024!'
+  },
+  'vendor@petfood.tn': {
+    _id: 'demo_vendor',
+    email: 'vendor@petfood.tn',
+    name: 'Leila Mansouri',
+    role: 'vendor',
+    demoPassword: 'Vendor2024!'
   },
 };
 
@@ -113,6 +128,7 @@ const login = async (req, res) => {
         }
         const ok = await bcrypt.compare(password, user.password);
         if (!ok) {
+          recordFailedLogin(req.ip, email);
           return res.status(401).json({ error: 'Identifiants incorrects. Vérifiez votre email et mot de passe.' });
         }
       }
@@ -122,6 +138,7 @@ const login = async (req, res) => {
       const demo = demoUsers[email];
       if (demo) {
         if (password !== demo.demoPassword) {
+          recordFailedLogin(req.ip, email);
           return res.status(401).json({ error: 'Identifiants incorrects. Vérifiez votre email et mot de passe.' });
         }
         user = demo;
@@ -129,8 +146,11 @@ const login = async (req, res) => {
     }
 
     if (!user) {
+      recordFailedLogin(req.ip, email);
       return res.status(401).json({ error: 'Identifiants incorrects. Vérifiez votre email et mot de passe.' });
     }
+
+    resetFailedLogin(req.ip);
 
     const normalizedUser = {
       id: String(user.id || user._id),

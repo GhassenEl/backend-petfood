@@ -48,6 +48,13 @@ Fichiers clés :
 | Agent IA client | Groq + scoring | `aiRecommendationAgent.service.js` |
 | NutriPro / vision | FastAPI optionnel (`:8000`) | `fastapi_service/` (gitignored) |
 | Santé par espèce | Règles catalogue | `healthRecommendations.service.js` |
+| Triage clinique vétérinaire | Régression logistique (symptômes + vitaux + profil) | `clinical_logistic_v1` → `vetPetDiagnosis.service.js` |
+| Incidents / réclamations admin | Régression logistique priorité + catégorie | `incident_logistic_v1` → `incidentMlAgent.service.js` |
+| Risque annulation commande | Régression logistique | `cancel_risk_logistic_v1` → `mlPlatform.service.js` |
+| Churn / réachat client | Régression logistique | `churn_logistic_v1` → `platformInsightsModel`, `aiRecommendationAgent` |
+| Fit produit ↔ animal | Régression logistique | `product_fit_v1` → `petRecommendation.service.js` |
+| Priorité livreur | Score composite + cancel risk | `delivery_priority_v1` → orchestrateur livreur |
+| Insights plateforme (sans Python) | Agrégation modèles Node | `buildNodePlatformInsights()` |
 
 ## Commandes
 
