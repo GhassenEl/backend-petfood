@@ -75,6 +75,8 @@ model User {
   refundRequests     RefundRequest[]
   householdsOwned    Household[]              @relation("HouseholdOwner")
   householdMemberships HouseholdMember[]      @relation("HouseholdMemberships")
+  purchaseNeeds      PurchaseNeed[]
+  purchaseNeedResponses PurchaseNeedResponse[]
 }
 
 model PetFeeder {
@@ -1356,6 +1358,51 @@ model PlatformCity {
 
   @@index([governorate, isActive])
   @@index([priority])
+}
+
+/// Publication client — besoin d'achat (marketplace inversée)
+model PurchaseNeed {
+  id          String                 @id @default(uuid())
+  clientId    String
+  title       String
+  description String
+  category    String                 @default("food")
+  animalType  String?
+  petName     String?
+  quantity    String?
+  budgetMin   Float?
+  budgetMax   Float?
+  city        String?
+  region      String?
+  urgency     String                 @default("normal")
+  status      String                 @default("open")
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  client      User                   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  responses   PurchaseNeedResponse[]
+
+  @@index([status, createdAt])
+  @@index([clientId])
+  @@index([category])
+  @@index([region])
+}
+
+/// Réponse vendeur à un besoin d'achat client
+model PurchaseNeedResponse {
+  id            String       @id @default(uuid())
+  needId        String
+  vendorUserId  String
+  vendorName    String?
+  message       String
+  proposedPrice Float?
+  productUrl    String?
+  status        String       @default("pending")
+  createdAt     DateTime     @default(now())
+  need          PurchaseNeed @relation(fields: [needId], references: [id], onDelete: Cascade)
+  vendor        User         @relation(fields: [vendorUserId], references: [id], onDelete: Cascade)
+
+  @@index([needId])
+  @@index([vendorUserId])
 }
 
 /// Journal d'audit / activité plateforme (persistant)

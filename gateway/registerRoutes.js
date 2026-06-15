@@ -64,6 +64,7 @@ function registerGatewayRoutes(app) {
   app.use('/api/service-bookings', require('../routes/serviceBookings.routes'));
   app.use('/api/blog-articles', require('../routes/blogArticles.routes'));
   app.use('/api/found-me', require('../routes/foundMe.routes'));
+  app.use('/api/purchase-needs', require('../routes/purchaseNeeds.routes'));
   app.use('/api/ecosystem', require('../routes/ecosystem.routes'));
   app.use('/api/refunds', require('../routes/refunds.routes'));
   app.use('/api/admin/refunds', require('../routes/adminRefunds.routes'));
