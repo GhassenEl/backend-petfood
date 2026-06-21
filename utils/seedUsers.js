@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const { prisma } = require('../prismaClient');
 
 const DEMO_ACCOUNTS = [
+  { email: 'jazighassen1@gmail.com', password: 'PetfoodTN2024!', name: 'Ghassen El Jezi', role: 'admin' },
   { email: 'admin@petfood.tn', password: 'PetfoodTN2024!', name: 'El Jezi Ghassen', role: 'admin' },
   {
     email: 'client@petfood.tn',

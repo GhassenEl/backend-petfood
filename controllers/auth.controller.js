@@ -4,8 +4,22 @@ const { prisma, isDemoMode } = require('../prismaClient');
 const { normalizeEmail, validateEmail, validatePassword } = require('../utils/authValidation');
 const { recordFailedLogin, resetFailedLogin } = require('../services/intrusionDetection.service');
 const { logFromRequest } = require('../services/activityLog.service');
+const { signAccessToken } = require('../utils/jwtTokens');
+const {
+  registerSession,
+  revokeSession,
+} = require('../services/sessionRegistry.service');
+
+const { sendPasswordResetEmail, isMailConfigured } = require('../services/mail.service');
 
 const demoUsers = {
+  'jazighassen1@gmail.com': {
+    _id: 'demo_admin_ghassen',
+    email: 'jazighassen1@gmail.com',
+    name: 'Ghassen El Jezi',
+    role: 'admin',
+    demoPassword: 'PetfoodTN2024!',
+  },
   'admin@petfood.tn': {
     _id: 'demo_admin',
     email: 'admin@petfood.tn',
@@ -90,11 +104,16 @@ const register = async (req, res) => {
       }
     });
 
-    const token = jwt.sign(
-      { id: user.id, email: user.email, name: user.name, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+    const tokenPayload = { id: user.id, email: user.email, name: user.name, role: user.role };
+    const { token, jti } = signAccessToken(tokenPayload);
+    registerSession({
+      jti,
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
 
     res.status(201).json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role } });
   } catch (error) {
@@ -184,11 +203,21 @@ const login = async (req, res) => {
       module: 'auth',
     });
 
-    const token = jwt.sign(
-      { id: normalizedUser.id, email: normalizedUser.email, name: normalizedUser.name, role: normalizedUser.role },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+    const { token, jti } = signAccessToken({
+      id: normalizedUser.id,
+      email: normalizedUser.email,
+      name: normalizedUser.name,
+      role: normalizedUser.role,
+    });
+
+    registerSession({
+      jti,
+      userId: normalizedUser.id,
+      email: normalizedUser.email,
+      role: normalizedUser.role,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
 
     res.json({ token, user: normalizedUser });
   } catch (error) {
@@ -208,18 +237,16 @@ const forgotPassword = async (req, res) => {
     if (emailErr) return res.status(400).json({ error: emailErr });
 
     let user;
-    if (isDemoMode()) {
+    if (!isDemoMode()) {
+      user = await prisma.user.findUnique({ where: { email } });
+      if (user && user.isActive === false) {
+        return res.status(403).json({ error: 'Compte désactivé. Contactez l\'administration.' });
+      }
+    }
+    if (!user) {
       user = demoUsers[email];
       if (!user) {
         return res.status(404).json({ error: 'Aucun compte associé à cet email.' });
-      }
-    } else {
-      user = await prisma.user.findUnique({ where: { email } });
-      if (!user) {
-        return res.status(404).json({ error: 'Aucun compte associé à cet email.' });
-      }
-      if (user.isActive === false) {
-        return res.status(403).json({ error: 'Compte désactivé. Contactez l\'administration.' });
       }
     }
 
@@ -229,17 +256,30 @@ const forgotPassword = async (req, res) => {
       { expiresIn: '15m' }
     );
 
-    console.log(`🔄 Reset token for ${email}: ${resetToken}`);
-    console.log('💡 Lien dev : /reset-password?token=...');
+    const mailResult = await sendPasswordResetEmail({
+      to: user.email,
+      name: user.name,
+      resetToken,
+    });
+
+    if (!mailResult.sent) {
+      console.log(`🔄 Reset token for ${email}: ${resetToken}`);
+      console.log('💡 Lien dev : /reset-password?token=...');
+    }
 
     const response = {
-      message: 'Si un compte existe, un lien de réinitialisation a été envoyé par email.',
+      message: mailResult.sent
+        ? 'Un e-mail de réinitialisation a été envoyé. Vérifiez votre boîte de réception (et les spams).'
+        : 'Si un compte existe, un lien de réinitialisation a été envoyé par email.',
       expiresIn: 15 * 60 * 1000,
+      emailSent: mailResult.sent,
     };
 
-    if (process.env.NODE_ENV !== 'production') {
+    if (process.env.NODE_ENV !== 'production' && !mailResult.sent) {
       response.resetToken = resetToken;
-      response.devNote = 'Mode développement : utilisez le lien ci-dessous (valide 15 min).';
+      response.devNote = isMailConfigured()
+        ? 'Échec envoi e-mail — utilisez le lien ci-dessous (valide 15 min).'
+        : 'Mode développement : configurez SMTP dans backend/.env ou utilisez le lien ci-dessous (valide 15 min).';
     }
 
     res.json(response);
@@ -261,18 +301,18 @@ const resetPassword = async (req, res) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     let user;
-    if (isDemoMode()) {
+    if (!isDemoMode()) {
+      user = await prisma.user.findUnique({ where: { id: decoded.id } });
+      if (user && user.email !== decoded.email) user = null;
+    }
+    if (!user) {
       user = demoUsers[decoded.email];
       if (!user) {
         return res.status(404).json({ error: 'Utilisateur introuvable.' });
       }
-      console.log(`🔓 Demo password reset for ${decoded.email} - NEW: ${password}`);
+      user.demoPassword = password;
+      console.log(`🔓 Demo password reset for ${decoded.email}`);
       return res.json({ message: 'Mot de passe réinitialisé avec succès.' });
-    }
-
-    user = await prisma.user.findUnique({ where: { id: decoded.id } });
-    if (!user || user.email !== decoded.email) {
-      return res.status(401).json({ error: 'Lien invalide ou expiré.' });
     }
 
     if (user.isActive === false) {
@@ -344,4 +384,65 @@ const changePassword = async (req, res) => {
   }
 };
 
-module.exports = { register, login, forgotPassword, resetPassword, changePassword };
+const me = async (req, res) => {
+  res.json({
+    user: {
+      id: req.user.id || req.user._id,
+      email: req.user.email,
+      name: req.user.name,
+      role: req.user.role,
+    },
+  });
+};
+
+const logout = async (req, res) => {
+  try {
+    if (req.user?.jti) {
+      revokeSession(req.user.jti, {
+        requesterId: req.user.id || req.user._id,
+        isAdmin: req.user.role === 'admin',
+      });
+    }
+    res.json({ ok: true, message: 'Déconnexion effectuée.' });
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message || 'Erreur déconnexion' });
+  }
+};
+
+const refresh = async (req, res) => {
+  try {
+    const oldJti = req.user?.jti;
+    const payload = {
+      id: req.user.id || req.user._id,
+      email: req.user.email,
+      name: req.user.name,
+      role: req.user.role,
+    };
+    const { token, jti } = signAccessToken(payload);
+    registerSession({
+      jti,
+      userId: payload.id,
+      email: payload.email,
+      role: payload.role,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    if (oldJti) {
+      revokeSession(oldJti, { requesterId: payload.id, isAdmin: req.user.role === 'admin' });
+    }
+    res.json({ token });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Impossible de renouveler le token' });
+  }
+};
+
+module.exports = {
+  register,
+  login,
+  forgotPassword,
+  resetPassword,
+  changePassword,
+  me,
+  logout,
+  refresh,
+};
