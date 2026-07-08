@@ -1,0 +1,302 @@
+{
+  "total_products": 1827,
+  "unique_titles": 1827,
+  "avg_star_all": 3.97,
+  "avg_star_rated_only": 4.71,
+  "rated_products_pct": 84.4,
+  "products_star_ge_4_5_pct": 73.9,
+  "products_star_lt_3_pct": 0.5,
+  "no_rating_pct": 15.6,
+  "total_sold_units_est": 654928,
+  "avg_sold_per_product": 358.5,
+  "median_sold": 76,
+  "zero_sold_count": 103,
+  "zero_sold_pct": 5.6,
+  "total_wished": 1510388,
+  "avg_wished": 826.7,
+  "total_stock_units": 28496477,
+  "avg_stock": 15597.0,
+  "zero_stock_pct": 4.9,
+  "top_sold": [
+    {
+      "title": "Cat Interactive Ball Smart Cat DogToys Electronic Interactive Cat Toy Indoor Aut",
+      "sold": 10000,
+      "star": 4.3
+    },
+    {
+      "title": "Super Soft Pet Finger Toothbrush Teddy Dog Brush Bad Breath Tartar Teeth Care To",
+      "sold": 10000,
+      "star": 4.8
+    },
+    {
+      "title": "Dog Car Seat Belt Safety Protector Travel Pets Accessories Dog Leash Collar Brea",
+      "sold": 10000,
+      "star": 4.7
+    },
+    {
+      "title": "Bathroom  Puppy Big Dog Cat Bath Massage Gloves Brush Soft Safety Silicone Pet A",
+      "sold": 10000,
+      "star": 4.8
+    },
+    {
+      "title": "Dogs  Interactive Toys Soft TPR Toys for Dog Pet Teeth Cleaning Bite Resistance ",
+      "sold": 10000,
+      "star": 4.7
+    },
+    {
+      "title": "Ultra-Quiet Cat Water Fountain Filter Smart Automatic Pet Dog Water Dispenser&Bu",
+      "sold": 10000,
+      "star": 4.6
+    },
+    {
+      "title": "Cat Toys Interactive Launch Training Creative Kittens Mini Pompoms Games Stretch",
+      "sold": 10000,
+      "star": 4.7
+    },
+    {
+      "title": "Smart Dog Toy Ball Electronic Interactive Pet Toy Moving Ball USB Automatic Movi",
+      "sold": 10000,
+      "star": 4.3
+    },
+    {
+      "title": "Pet Placemat Dog Food bowl Mat Cat Feed Mat Cat Dog Drinking Feeding Placemat Si",
+      "sold": 10000,
+      "star": 4.8
+    },
+    {
+      "title": "Soft Plush Pet Bed with Cover Round Cat Bed Pet Mattress Warm Cat Dog 2 in 1 Sle",
+      "sold": 10000,
+      "star": 4.8
+    }
+  ],
+  "top_wished": [
+    {
+      "title": "Pet Dog Footprint Handprint Pad Safe Non-toxic Printing Pad Pet Footprint Baby P",
+      "wished": 45939,
+      "sold": 3000
+    },
+    {
+      "title": "Adjustable Pet Cat Dog Car Seat  Belt Pet Seat Vehicle Dog Harness Lead Clip Saf",
+      "wished": 37683,
+      "sold": 5000
+    },
+    {
+      "title": "Nylon Pet Dog Collar LED Light Night Safety Pets Supplies Cat LED Dog Collar For",
+      "wished": 36421,
+      "sold": 63
+    },
+    {
+      "title": "1Pc Cat Toy Stick Feather Wand With Bell Mouse Cage Toys Plastic Artificial Colo",
+      "wished": 35322,
+      "sold": 1000
+    },
+    {
+      "title": "Soft Plush Pet Bed with Cover Round Cat Bed Pet Mattress Warm Cat Dog 2 in 1 Sle",
+      "wished": 32805,
+      "sold": 10000
+    },
+    {
+      "title": "Ultra-Quiet Cat Water Fountain Filter Smart Automatic Pet Dog Water Dispenser&Bu",
+      "wished": 31902,
+      "sold": 10000
+    },
+    {
+      "title": "cat accessories Double-layer  Non-slip big Cat Litter Mat Pet Litter Box Filter ",
+      "wished": 31849,
+      "sold": 3000
+    },
+    {
+      "title": "Luxury Cat Bed Sofa Winter Warm Cat Nest Pet Bed for Small Medium Dogs Cats Comf",
+      "wished": 29360,
+      "sold": 3000
+    },
+    {
+      "title": "Pet Placemat Dog Food bowl Mat Cat Feed Mat Cat Dog Drinking Feeding Placemat Si",
+      "wished": 28208,
+      "sold": 10000
+    },
+    {
+      "title": "3.5L Automatic Pet Feeder Smart Food Dispenser For Cats Dogs Timer Stainless Ste",
+      "wished": 25661,
+      "sold": 180
+    }
+  ],
+  "top_rated_popular": [
+    {
+      "title": "Cat Tunnel Foldable Cat Tunnel Pet Supplies Cat S T Y Pass Play Tunnel   Cat Toy",
+      "star": 5.0,
+      "sold": 466
+    },
+    {
+      "title": "Cat Tassel Toy Plush Balls Cat Teaser Wand Cat Interactive Toys Funny Bell Ribbo",
+      "star": 5.0,
+      "sold": 354
+    },
+    {
+      "title": "20cm Cat Favor Fish Toy Stuffed Fish Shape Cat Scratch Board Scratching Post plu",
+      "star": 5.0,
+      "sold": 195
+    },
+    {
+      "title": "Pets Tartar Control Kit for Dogs Contains Toothpaste Toothbrush and Fingerbrush ",
+      "star": 5.0,
+      "sold": 294
+    },
+    {
+      "title": "Cat and dog feeder Pet water dispenser Cat food bowl Large capacity feeder water",
+      "star": 5.0,
+      "sold": 140
+    },
+    {
+      "title": "Dog Natural Rubber Chew Toy Dog Geometric Safety Ball Pet Interactive Balls Pupp",
+      "star": 5.0,
+      "sold": 149
+    },
+    {
+      "title": "MADDEN Funny Cat Toys Colorful Yarn Balls with Bell Sounding Interactive Chewing",
+      "star": 5.0,
+      "sold": 126
+    },
+    {
+      "title": "Dog Harness with 1.2m Leash Set Adjustable Pet Harness For Puppy Cats French Bul",
+      "star": 5.0,
+      "sold": 140
+    },
+    {
+      "title": "1 Roll 15 Bags Pet Dog Poop Bags Dispenser Collector Garbage Bag Puppy Cat Poope",
+      "star": 5.0,
+      "sold": 111
+    },
+    {
+      "title": "Pet Cleaning Brush Dog Cats Bath Massage Gloves Comb Hair Remover Grooming Soft ",
+      "star": 5.0,
+      "sold": 132
+    }
+  ],
+  "by_category": {
+    "jouets": {
+      "count": 626,
+      "share_pct": 34.3,
+      "avg_star": 4.7,
+      "total_sold_est": 285892,
+      "total_wished": 489601,
+      "avg_stock": 3017.0,
+      "zero_sold_pct": 3.8,
+      "rated_pct": 87.7
+    },
+    "grooming_soin": {
+      "count": 252,
+      "share_pct": 13.8,
+      "avg_star": 4.79,
+      "total_sold_est": 90772,
+      "total_wished": 148521,
+      "avg_stock": 9139.0,
+      "zero_sold_pct": 2.8,
+      "rated_pct": 86.5
+    },
+    "alimentation_eau": {
+      "count": 232,
+      "share_pct": 12.7,
+      "avg_star": 4.74,
+      "total_sold_est": 68547,
+      "total_wished": 201916,
+      "avg_stock": 3684.0,
+      "zero_sold_pct": 2.2,
+      "rated_pct": 86.6
+    },
+    "colliers_harnais": {
+      "count": 207,
+      "share_pct": 11.3,
+      "avg_star": 4.75,
+      "total_sold_est": 74990,
+      "total_wished": 259220,
+      "avg_stock": 97498.0,
+      "zero_sold_pct": 1.0,
+      "rated_pct": 91.8
+    },
+    "lits_niches": {
+      "count": 155,
+      "share_pct": 8.5,
+      "avg_star": 4.5,
+      "total_sold_est": 40728,
+      "total_wished": 162251,
+      "avg_stock": 6903.0,
+      "zero_sold_pct": 13.5,
+      "rated_pct": 74.2
+    },
+    "litiere_hygiene": {
+      "count": 154,
+      "share_pct": 8.4,
+      "avg_star": 4.66,
+      "total_sold_est": 56823,
+      "total_wished": 125787,
+      "avg_stock": 6965.0,
+      "zero_sold_pct": 3.2,
+      "rated_pct": 89.0
+    },
+    "autres": {
+      "count": 86,
+      "share_pct": 4.7,
+      "avg_star": 4.71,
+      "total_sold_est": 13075,
+      "total_wished": 64426,
+      "avg_stock": 10551.0,
+      "zero_sold_pct": 25.6,
+      "rated_pct": 58.1
+    },
+    "transport_securite": {
+      "count": 46,
+      "share_pct": 2.5,
+      "avg_star": 4.7,
+      "total_sold_est": 6168,
+      "total_wished": 26064,
+      "avg_stock": 922.0,
+      "zero_sold_pct": 30.4,
+      "rated_pct": 54.3
+    },
+    "dressage": {
+      "count": 32,
+      "share_pct": 1.8,
+      "avg_star": 4.66,
+      "total_sold_est": 5258,
+      "total_wished": 5263,
+      "avg_stock": 1025.0,
+      "zero_sold_pct": 0.0,
+      "rated_pct": 84.4
+    },
+    "accessoires_mode": {
+      "count": 30,
+      "share_pct": 1.6,
+      "avg_star": 4.72,
+      "total_sold_est": 5206,
+      "total_wished": 26965,
+      "avg_stock": 4378.0,
+      "zero_sold_pct": 0.0,
+      "rated_pct": 90.0
+    },
+    "vet_sante": {
+      "count": 7,
+      "share_pct": 0.4,
+      "avg_star": 5.0,
+      "total_sold_est": 7469,
+      "total_wished": 374,
+      "avg_stock": 1601.0,
+      "zero_sold_pct": 42.9,
+      "rated_pct": 42.9
+    }
+  },
+  "category_distribution": {
+    "litiere_hygiene": 154,
+    "dressage": 32,
+    "lits_niches": 155,
+    "alimentation_eau": 232,
+    "jouets": 626,
+    "autres": 86,
+    "grooming_soin": 252,
+    "colliers_harnais": 207,
+    "transport_securite": 46,
+    "accessoires_mode": 30,
+    "vet_sante": 7
+  },
+  "generatedAt": "2026-07-08T20:44:05.142861Z"
+}

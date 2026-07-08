@@ -7,7 +7,18 @@ const { enrichProduct } = require('../utils/productDetailsCatalog');
 const promoService = require('../services/promo.service');
 const { analyzeTextFull } = require('../services/nlpTextAnalysis.service');
 const roleChat = require('../services/roleChatAssistant.service');
+const marketplaceKpiChat = require('../services/marketplaceKpiChat.service');
 const { getReviewBasedRecommendations } = require('../services/reviewRecommendation.service');
+
+const chatHistoryService = require('../services/chatHistory.service');
+const chatSources = require('../utils/chatSources.util');
+const chatRag = require('../services/chatRag.service');
+
+async function finalizeChatResponse(response, meta = {}) {
+  const withSources = chatSources.attachSources(response || {}, meta);
+  const { ragChunks, ...clean } = withSources;
+  return clean;
+}
 
 async function resolveUserForRecommendations(userId, options = {}) {
   if (options.user) return options.user;
@@ -445,13 +456,22 @@ async function buildNlpGuidedResponse(userId, userMessage, user, nlp) {
   return null;
 }
 
-function buildSmartFallback(user, nlp) {
+async function buildSmartFallback(user, nlp, ctx = {}) {
+  const role = ctx.role || user?.role || 'client';
+  const language = ctx.language || 'fr';
+  const message = ctx.message || '';
+
+  const ragHit = await chatRag.tryOpenAnswer({ message, role, language });
+  if (ragHit?.content) {
+    return finalizeChatResponse(ragHit, { ragChunks: ragHit.ragChunks });
+  }
+
   const petLabel = PET_TYPE_LABELS[user?.petType] || 'votre animal';
   const emotionHint = nlp?.emotionLabel && nlp.emotion !== 'neutral'
     ? ` (${nlp.emotionLabel.toLowerCase()} détecté)`
     : '';
 
-  return {
+  return finalizeChatResponse({
     content:
       `Je n\'ai pas identifié une intention précise${emotionHint}. Voici ce que je gère :\n\n` +
       '• **Produits** & recommandations pour ' + petLabel + '\n' +
@@ -461,7 +481,7 @@ function buildSmartFallback(user, nlp) {
       '• **Réclamations** & support\n\n' +
       'Posez une question courte ou utilisez un bouton ci-dessous.',
     quickReplies: ['Recommandations', 'Mes commandes', 'Centre IoT', 'Codes promo disponibles', 'Guide paiement'],
-  };
+  }, { role });
 }
 
 function extractPromoCode(text) {
@@ -725,8 +745,8 @@ function buildAdminAssistantResponse(userMessage, user) {
       content:
         'Bonjour ' +
         (user?.name || '') +
-        ". Je suis l'assistant PetfoodTN pour l'administration. Je peux vous orienter vers les sections du menu (commandes, produits, avis, réclamations, factures, utilisateurs). Que cherchez-vous ?",
-      quickReplies: ['Commandes', 'Produits', 'Avis', 'Réclamations', 'Factures', 'Utilisateurs']
+        ". Je suis l'assistant PetfoodTN pour l'administration. Menu back-office (commandes, produits, avis…) ou **KPI marketplace** (ventes, notes, catégories, souhaits). Que cherchez-vous ?",
+      quickReplies: ['KPI marketplace', 'Top ventes', 'Commandes', 'Produits', 'Avis', 'Dashboard']
     };
   }
   if (/commande/.test(t)) {
@@ -758,13 +778,13 @@ function buildAdminAssistantResponse(userMessage, user) {
   if (/vétérinaire|veterinary/.test(t)) {
     return { content: 'Suivi vétérinaire : Gestion > Suivi Vétérinaire (/admin/veterinary).', quickReplies: ['Commandes', 'Produits'] };
   }
-  if (/dashboard|tableau|stat/.test(t)) {
-    return { content: 'Le tableau de bord : Analytics > Dashboard (/admin/dashboard) et Historique (/admin/history).', quickReplies: ['Commandes', 'Produits'] };
+  if (/dashboard|tableau|stat/.test(t) && !marketplaceKpiChat.detectMarketplaceKpiIntent(t)) {
+    return { content: 'Le tableau de bord : Analytics > Dashboard (/admin/dashboard) et Historique (/admin/history).', quickReplies: ['KPI marketplace', 'Commandes', 'Produits'] };
   }
   return {
     content:
-      "Je n'ai pas reconnu le sujet. Utilisez le menu latéral : Analytics (dashboard, historique), Gestion (commandes, factures, produits, utilisateurs, vétérinaire), Feedback (avis, réclamations), Paramètres (profil). Posez un mot-clé : commandes, produits, avis…",
-    quickReplies: ['Commandes', 'Produits', 'Avis', 'Dashboard']
+      "Je n'ai pas reconnu le sujet. Menu : Analytics, Gestion, Feedback — ou demandez un **KPI marketplace** (ex. « top ventes », « note moyenne », « répartition catégories »).",
+    quickReplies: ['KPI marketplace', 'Commandes', 'Produits', 'Avis', 'Dashboard']
   };
 }
 
@@ -784,8 +804,8 @@ function buildLivreurAssistantResponse(userMessage, user) {
       content:
         'Bonjour ' +
         (user?.name || '') +
-        '. Assistant livreur PetFoodTN : je peux vous rappeler où voir vos livraisons, la carte, les messages et vos gains.',
-      quickReplies: ['Commandes', 'Carte', 'Messages', 'Gains', 'Tableau de bord']
+        '. Assistant livreur PetFoodTN : livraisons, carte, messages, gains — ou **KPI catalogue** (volume par catégorie).',
+      quickReplies: ['Commandes', 'Carte', 'KPI marketplace', 'Messages', 'Gains', 'Tableau de bord']
     };
   }
   if (/commande|livraison|livrer/.test(t)) {
@@ -827,14 +847,21 @@ function buildLivreurAssistantResponse(userMessage, user) {
 
 async function buildResponse(userId, userMessage, user, context = {}, nlp = null) {
   user = normalizeUserForChat(user);
+  const effectiveRole = context?.role || context?.portal || user?.role;
 
-  const roleHit = await roleChat.buildRoleResponse(userMessage, user, context, nlp);
+  const kpiHit = marketplaceKpiChat.buildMarketplaceKpiResponse(
+    userMessage,
+    effectiveRole || user?.role || 'client',
+  );
+  if (kpiHit) return kpiHit;
+
+  const roleHit = await roleChat.buildRoleResponse(userMessage, user, { ...context, role: effectiveRole }, nlp);
   if (roleHit) return roleHit;
 
-  if (user?.role === 'admin') {
+  if (effectiveRole === 'admin') {
     return buildAdminAssistantResponse(userMessage, user);
   }
-  if (user?.role === 'livreur') {
+  if (effectiveRole === 'livreur') {
     return buildLivreurAssistantResponse(userMessage, user);
   }
 
@@ -1210,7 +1237,11 @@ async function buildResponse(userId, userMessage, user, context = {}, nlp = null
   const nlpHit = await buildNlpGuidedResponse(userId, userMessage, user, nlp);
   if (nlpHit) return nlpHit;
 
-  return buildSmartFallback(user, nlp);
+  return await buildSmartFallback(user, nlp, {
+    message: userMessage,
+    role: context?.role || context?.portal || user?.role,
+    language: context?.language || 'fr',
+  });
 }
 
 function compactNlpPayload(nlp) {
@@ -1295,9 +1326,38 @@ function applyNlpToChatResponse(response, nlp, user) {
 }
 
 
+function enrichHistoryMessage(row) {
+  const out = { ...row };
+  if (row.nlpJson) {
+    try {
+      out.nlp = JSON.parse(row.nlpJson);
+    } catch {
+      /* ignore */
+    }
+  }
+  if (row.metadata) {
+    try {
+      const meta = JSON.parse(row.metadata);
+      if (meta.imagePreview) out.imagePreview = meta.imagePreview;
+      if (meta.hint && !out.imageHint) out.imageHint = meta.hint;
+      if (meta.petName && !out.petName) out.petName = meta.petName;
+    } catch {
+      /* ignore */
+    }
+  }
+  if (!out.messageType) {
+    const content = String(row.content || '');
+    out.messageType =
+      content.startsWith(chatHistoryService.IMAGE_MARKER) || content.startsWith('📷')
+        ? 'image'
+        : 'text';
+  }
+  return out;
+}
+
 const sendMessage = async (req, res) => {
   try {
-    const { message, context } = req.body;
+    const { message, context = {}, role, language } = req.body;
     const userId = req.user.id || req.user._id;
 
     if (!message || !message.trim()) {
@@ -1311,11 +1371,19 @@ const sendMessage = async (req, res) => {
       user = normalizeUserForChat(await prisma.user.findUnique({ where: { id: userId } }));
     }
 
-    // context currently used for UI workflow hints (not a real model prompt).
-    // Keep it safe/deterministic.
+    const mergedContext = {
+      ...context,
+      role: context.role || role || user?.role,
+      language: context.language || language,
+    };
+
     const nlp = analyzeTextFull(message.trim());
-    let response = await buildResponse(userId, message.trim(), user, context, nlp);
+    let response = await buildResponse(userId, message.trim(), user, mergedContext, nlp);
     response = applyNlpToChatResponse(response, nlp, user);
+    response = await finalizeChatResponse(response, {
+      role: mergedContext.role || user?.role,
+      message: message.trim(),
+    });
 
 
     if (!isDemoMode()) {
@@ -1324,7 +1392,9 @@ const sendMessage = async (req, res) => {
           data: {
             userId,
             role: 'user',
-            content: message.trim()
+            content: message.trim(),
+            messageType: 'text',
+            nlpJson: JSON.stringify(compactNlpPayload(nlp)),
           }
         });
 
@@ -1333,6 +1403,7 @@ const sendMessage = async (req, res) => {
             userId,
             role: 'assistant',
             content: response.content,
+            messageType: 'text',
             products: response.products || null,
             quickReplies: response.quickReplies || null
           }
@@ -1349,6 +1420,8 @@ const sendMessage = async (req, res) => {
       shouldShowVetCTA: !!response.shouldShowVetCTA,
       promoCode: response.promoCode || null,
       nlp: response.nlp || null,
+      sources: response.sources || [],
+      ragPowered: !!response.ragPowered,
     });
   } catch (error) {
     console.error('Chat message error:', error);
@@ -1389,7 +1462,9 @@ const sendPetMessage = async (req, res) => {
           data: {
             userId,
             role: 'user',
-            content: message.trim()
+            content: message.trim(),
+            messageType: 'text',
+            nlpJson: JSON.stringify(compactNlpPayload(nlp)),
           }
         });
 
@@ -1398,6 +1473,7 @@ const sendPetMessage = async (req, res) => {
             userId,
             role: 'assistant',
             content: response.content,
+            messageType: 'text',
             products: response.products || null,
             quickReplies: response.quickReplies || null
           }
@@ -1432,7 +1508,7 @@ const getHistory = async (req, res) => {
         orderBy: { createdAt: 'asc' },
         take: 100
       });
-      return res.json(messages);
+      return res.json(messages.map(enrichHistoryMessage));
     }
 
     const messages = await prisma.chatMessage.findMany({
@@ -1440,7 +1516,7 @@ const getHistory = async (req, res) => {
       orderBy: { createdAt: 'asc' },
       take: 100
     });
-    res.json(messages);
+    res.json(messages.map(enrichHistoryMessage));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1459,6 +1535,49 @@ const clearHistory = async (req, res) => {
   }
 };
 
+const getEnrichedHistoryHandler = async (req, res) => {
+  try {
+    const userId = req.user.id || req.user._id;
+    const limit = Math.min(Number(req.query.limit) || 120, 200);
+    const pack = await chatHistoryService.getEnrichedHistory(userId, {
+      limit,
+      role: req.user.role,
+    });
+    res.json(pack);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+const analyzeChatImageHandler = async (req, res) => {
+  try {
+    const { petName, imageHint, imageBase64, imagePreview } = req.body || {};
+    if (!imageHint && !imageBase64) {
+      return res.status(400).json({ error: 'Description ou image requise' });
+    }
+    const result = await chatHistoryService.analyzeAndSaveImage(req.user, {
+      petName,
+      imageHint,
+      imageBase64,
+      imagePreview,
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Chat image analyze error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+const getAdminChatHistoryHandler = async (req, res) => {
+  try {
+    const targetUserId = req.query.userId || req.query.clientId || null;
+    const overview = await chatHistoryService.getAdminOverview(targetUserId);
+    res.json(overview);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 const sendPublicMessage = async (req, res) => {
   try {
     const { message, role = 'visitor', context = {} } = req.body;
@@ -1470,12 +1589,18 @@ const sendPublicMessage = async (req, res) => {
     const guestUser = { id: 'guest', role: effectiveRole, name: 'Visiteur' };
     const nlp = analyzeTextFull(String(message).trim());
     const mergedContext = { ...context, role: effectiveRole, public: true };
-    let response = await roleChat.buildRoleResponse(
+    let response = marketplaceKpiChat.buildMarketplaceKpiResponse(
       String(message).trim(),
-      guestUser,
-      mergedContext,
-      nlp,
+      effectiveRole,
     );
+    if (!response) {
+      response = await roleChat.buildRoleResponse(
+        String(message).trim(),
+        guestUser,
+        mergedContext,
+        nlp,
+      );
+    }
     if (!response && effectiveRole === 'visitor') {
       response = await roleChat.buildVisitorResponse(String(message).trim(), guestUser, mergedContext);
     }
@@ -1485,7 +1610,29 @@ const sendPublicMessage = async (req, res) => {
         quickReplies: ['Recommandations', 'Catalogue produits', 'Connexion'],
       };
     }
+
+    const needsRag =
+      !response.ragPowered
+      && (
+        String(response.content || '').length < 90
+        || /précisez|posez une question|je peux vous aider sur petfoodtn/i.test(response.content || '')
+      );
+    if (needsRag) {
+      const rag = await chatRag.tryOpenAnswer({
+        message: String(message).trim(),
+        role: effectiveRole,
+        language: context?.language || 'fr',
+      });
+      if (rag?.content) {
+        response = rag;
+      }
+    }
+
     response = applyNlpToChatResponse(response, nlp, guestUser);
+    response = await finalizeChatResponse(response, {
+      role: effectiveRole,
+      message: String(message).trim(),
+    });
 
     res.json({
       message: response.content,
@@ -1493,6 +1640,8 @@ const sendPublicMessage = async (req, res) => {
       quickReplies: response.quickReplies || [],
       shouldShowVetCTA: !!response.shouldShowVetCTA,
       nlp: response.nlp || null,
+      sources: response.sources || [],
+      ragPowered: !!response.ragPowered,
     });
   } catch (error) {
     console.error('Public chat error:', error);
@@ -1505,5 +1654,8 @@ module.exports = {
   sendPetMessage,
   sendPublicMessage,
   getHistory,
-  clearHistory
+  clearHistory,
+  getEnrichedHistoryHandler,
+  analyzeChatImageHandler,
+  getAdminChatHistoryHandler,
 };

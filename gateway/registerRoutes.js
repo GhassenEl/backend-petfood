@@ -25,6 +25,15 @@ function registerGatewayRoutes(app) {
   warnIfMicroserviceEnv();
   console.log('📡 API monolithe (routes locales) :');
 
+  app.get('/api/health', (req, res) => {
+    res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      message: 'PetFoodTN Backend API ready',
+      uptime: process.uptime(),
+    });
+  });
+
   app.use('/api/products', require('../routes/products.routes'));
   app.use('/api/orders', require('../routes/orders.routes'));
   app.use('/api/users', require('../routes/users.routes'));
@@ -49,6 +58,7 @@ function registerGatewayRoutes(app) {
   app.use('/api/feeder', require('../routes/feeder.routes'));
   app.use('/api/nutrition', require('../routes/nutrition.routes'));
   app.use('/api/chat', require('../routes/chat.routes'));
+  app.use('/api/marketplace', require('../routes/marketplace.routes'));
   app.use('/api/security', require('../routes/security.routes'));
   app.use('/api/vet', require('../routes/vet.routes'));
   app.use('/api/livreur', require('../routes/livreur.routes'));
@@ -56,6 +66,7 @@ function registerGatewayRoutes(app) {
   app.use('/api/stripe', require('../routes/stripe'));
   app.use('/api/payments', require('../routes/payments.routes'));
   app.use('/api/ai', require('../routes/ai.routes'));
+  app.use('/api/recommendations', require('../routes/recommendations.routes'));
   app.use('/api/ml', require('../routes/ml.routes'));
   app.use('/api/analytics', require('../routes/analytics.routes'));
   app.use('/api/leave-requests', require('../routes/leave.routes'));
@@ -77,8 +88,11 @@ function registerGatewayRoutes(app) {
   app.use('/api/admin/prices', require('../routes/adminPriceGovernance.routes'));
   app.use('/api/admin/uploads', require('../routes/uploads.routes'));
   app.use('/api/admin/activity-logs', require('../routes/adminActivityLogs.routes'));
+  app.use('/api/admin/presence', require('../routes/adminPresence.routes'));
   app.use('/api/activity-logs', require('../routes/activityLogs.routes'));
+  app.use('/api/presence', require('../routes/presence.routes'));
   app.use('/api/client', require('../routes/clientDashboard.routes'));
+  app.use('/api/client/iot', require('../routes/clientIotFoodQuality.routes'));
 }
 
 /** @deprecated Conservé pour compatibilité — équivalent à registerGatewayRoutes */
