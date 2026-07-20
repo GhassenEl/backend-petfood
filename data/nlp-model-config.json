@@ -1,7 +1,7 @@
 {
-  "activeModelId": "bert",
-  "selectionMode": "manual",
+  "activeModelId": "lstm",
+  "selectionMode": "auto",
   "task": "classification_sentiment_fr",
-  "updatedAt": "2026-06-13T12:11:32.001Z",
+  "updatedAt": "2026-07-08T21:48:19.403Z",
   "updatedBy": "El Jezi Ghassen"
 }

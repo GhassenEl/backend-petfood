@@ -56,6 +56,7 @@ function registerGatewayRoutes(app) {
   app.use('/api/notifications', require('../routes/notifications.routes'));
   app.use('/api/messages', require('../routes/messages.routes'));
   app.use('/api/feeder', require('../routes/feeder.routes'));
+  app.use('/api/behavior', require('../routes/behavior.routes'));
   app.use('/api/nutrition', require('../routes/nutrition.routes'));
   app.use('/api/chat', require('../routes/chat.routes'));
   app.use('/api/marketplace', require('../routes/marketplace.routes'));
@@ -86,6 +87,7 @@ function registerGatewayRoutes(app) {
   app.use('/api/platform', require('../routes/platformCities.routes'));
   app.use('/api/admin/partners', require('../routes/adminPartners.routes'));
   app.use('/api/admin/prices', require('../routes/adminPriceGovernance.routes'));
+  app.use('/api/admin/roles', require('../routes/adminRoles.routes'));
   app.use('/api/admin/uploads', require('../routes/uploads.routes'));
   app.use('/api/admin/activity-logs', require('../routes/adminActivityLogs.routes'));
   app.use('/api/admin/presence', require('../routes/adminPresence.routes'));

@@ -77,10 +77,14 @@ app.use((err, req, res, next) => {
   next(err);
 });
 
-// Security headers to prevent X-Frame-Options issues
+// Security headers
 app.use((req, res, next) => {
   res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'self' http://localhost:* http://127.0.0.1:* http://192.168.*:* http://10.*:* http://172.*:* *; frame-src 'self' http://localhost:* http://127.0.0.1:* http://192.168.*:* http://10.*:* http://172.*:* blob: data: ;");
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=(self)');
+  res.setHeader('X-Platform-Security', 'PetfoodTN/1.0');
   next();
 });
 
@@ -122,6 +126,11 @@ const initDatabase = async () => {
 };
 
 initDatabase();
+
+const { startMetricsCollector } = require('./utils/metricsHistory');
+const metricsIntervalMs = Number(process.env.METRICS_COLLECT_INTERVAL_MS || 5000);
+startMetricsCollector(metricsIntervalMs);
+console.log(`📈 Metrics collector actif (${metricsIntervalMs / 1000}s) — Prometheus/Grafana live`);
 
 const { registerGatewayRoutes } = require('./gateway/registerRoutes');
 registerGatewayRoutes(app);
@@ -177,6 +186,7 @@ const tryListen = (port) => {
   startPlatformPulse(io, 12000);
 
   io.on('connection', (socket) => {
+    const presenceService = require('./services/presence.service');
     console.log(' Socket connected:', socket.id);
 
     socket.on('join', (data) => {
@@ -188,6 +198,14 @@ const tryListen = (port) => {
         socket.join(room);
         console.log(` Socket ${socket.id} joined room ${room}`);
       });
+    });
+
+    socket.on('presence:register', (payload = {}) => {
+      presenceService.registerFromSocket(socket.id, payload);
+    });
+
+    socket.on('presence:heartbeat', (payload = {}) => {
+      presenceService.heartbeatFromSocket(socket.id, payload);
     });
 
     socket.on('chat:message', async (payload) => {
@@ -221,12 +239,25 @@ const tryListen = (port) => {
     });
 
     socket.on('disconnect', (reason) => {
+      presenceService.removeBySocketId(socket.id);
       console.log('🔌 Socket disconnected:', socket.id, reason);
     });
   });
 
   httpServer.listen(port, '0.0.0.0', () => {
     console.log(`✅ Server (HTTP+Socket.IO) running on http://localhost:${port}`);
+    try {
+      const { startMqttBridge } = require('./services/mqttFeederBridge.service');
+      startMqttBridge();
+    } catch (e) {
+      console.warn('MQTT bridge non démarré:', e?.message || e);
+    }
+    try {
+      const { startMqttCollarBridge } = require('./services/mqttCollarBridge.service');
+      startMqttCollarBridge();
+    } catch (e) {
+      console.warn('MQTT collar bridge non démarré:', e?.message || e);
+    }
   });
 
   httpServer.on('error', (err) => {

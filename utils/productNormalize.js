@@ -1,5 +1,55 @@
 const { enrichProduct } = require('./productDetailsCatalog');
 
+const BROKEN_REMOTE_IMAGE_FRAGMENTS = [
+  'photo-1585110396000-f9e815c5c35f',
+  'photo-1585110396000-c9ffd4e4b69f',
+  'photo-1552728080-b656399553ba',
+  'photo-1524704656165-b5c4abb5f90b',
+  'photo-1583511655857-d19b40a0a54e',
+  'photo-1516734212186-a967f81a0b22',
+  'photo-1513201099705-ce310b73ea6f',
+  'photo-1522069169879-c036186b7a1c',
+  'photo-1535591273668-7136ddc9d8e1',
+];
+
+const PLACEHOLDER_SVG_FRAGMENTS = [
+  '/images/pets/rabbit.svg',
+  '/images/pets/bird.svg',
+  '/images/pets/fish.svg',
+];
+
+const PRODUCT_REAL_IMAGES = {
+  ani_rabbit_1: '/images/products/rabbit-adoption.jpg',
+  ani_bird_1: '/images/products/bird-couple.jpg',
+  ani_fish_1: '/images/products/guppy-lot.jpg',
+  prd_rabbit_food: '/images/products/rabbit-food.jpg',
+};
+
+const ANIMAL_REAL_IMAGES = {
+  rabbit: '/images/products/rabbit-adoption.jpg',
+  bird: '/images/products/bird-couple.jpg',
+  fish: '/images/products/guppy-lot.jpg',
+};
+
+const isBrokenOrPlaceholderImage = (url) => {
+  if (!url || typeof url !== 'string') return false;
+  return BROKEN_REMOTE_IMAGE_FRAGMENTS.some((frag) => url.includes(frag))
+    || PLACEHOLDER_SVG_FRAGMENTS.some((frag) => url.includes(frag));
+};
+
+const resolveProductImageUrl = (url, product = {}) => {
+  const id = product?.id || product?._id;
+  if (id && PRODUCT_REAL_IMAGES[id]) return PRODUCT_REAL_IMAGES[id];
+
+  const animalType = product?.animalType;
+  if (!url || isBrokenOrPlaceholderImage(url)) {
+    return PRODUCT_REAL_IMAGES[id] || ANIMAL_REAL_IMAGES[animalType] || url;
+  }
+  return url;
+};
+
+const sanitizeImageUrl = (url, product = {}) => resolveProductImageUrl(url, product);
+
 const FALLBACK_STOCK = {
   prd_dog_1: 24,
   prd_dog_2: 53,
@@ -48,9 +98,17 @@ const normalizeProductRecord = (product) => {
       ? Number((price * (1 - discount / 100)).toFixed(2))
       : null;
 
+  const animalType = inferAnimalType(product);
+  const imageUrl = sanitizeImageUrl(product.imageUrl, product);
+  const image = sanitizeImageUrl(product.image, product);
+  const icon = sanitizeImageUrl(product.icon, product);
+
   const base = {
     ...product,
-    animalType: inferAnimalType(product),
+    animalType,
+    imageUrl: imageUrl || image || icon || product.imageUrl,
+    image: image || imageUrl || product.image,
+    icon: icon || imageUrl || product.icon,
     stock,
     discount,
     isOnSale: Boolean(product.isOnSale || discount > 0),

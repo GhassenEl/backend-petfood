@@ -26,4 +26,17 @@ const registerLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-module.exports = { loginLimiter, forgotPasswordLimiter, registerLimiter };
+const securityScanLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  message: { error: 'Trop de scans sécurité. Réessayez plus tard.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+module.exports = {
+  loginLimiter,
+  forgotPasswordLimiter,
+  registerLimiter,
+  securityScanLimiter,
+};

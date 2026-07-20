@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { prisma, isDemoMode } = require('../prismaClient');
+const { isSessionRevoked, touchSession } = require('../services/sessionRegistry.service');
 
 const auth = async (req, res, next) => {
   try {
@@ -19,6 +20,10 @@ const auth = async (req, res, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
+    if (decoded.jti && isSessionRevoked(decoded.jti)) {
+      return res.status(401).json({ error: 'Session révoquée. Reconnectez-vous.' });
+    }
+
     if (typeof decoded.id === 'string' && decoded.id.startsWith('demo_')) {
       req.user = {
         _id: decoded.id,
@@ -26,21 +31,24 @@ const auth = async (req, res, next) => {
         email: decoded.email,
         name: decoded.name,
         role: decoded.role,
+        jti: decoded.jti || null,
       };
+      if (decoded.jti) touchSession(decoded.jti);
       return next();
     }
 
     // In demo mode we allow protected endpoints so the UI can still work.
     // Controllers will handle demo data via demoStore / fake entities.
     if (isDemoMode()) {
-      // In demo mode, create a mock user object from decoded token
       req.user = {
         _id: decoded.id,
         id: decoded.id,
         email: decoded.email,
         name: decoded.name,
         role: decoded.role,
+        jti: decoded.jti || null,
       };
+      if (decoded.jti) touchSession(decoded.jti);
       return next();
     }
 
@@ -57,6 +65,8 @@ const auth = async (req, res, next) => {
     }
 
     req.user = user;
+    req.user.jti = decoded.jti || null;
+    if (decoded.jti) touchSession(decoded.jti);
     next();
   } catch (error) {
     console.error('Auth middleware error:', error);
@@ -111,5 +121,36 @@ const moderatorAuth = (req, res, next) => {
   next();
 };
 
-module.exports = { auth, adminAuth, vetAuth, livreurAuth, adminOrLivreurAuth, vendorAuth, moderatorAuth, isVetOrAdmin };
+/**
+ * Vérifie qu’un utilisateur a une permission (rôles système + custom).
+ * Admin = toujours OK.
+ */
+const requirePermission = (permissionKey) => async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Non authentifié' });
+    }
+    if (req.user.role === 'admin') return next();
+    const { roleHasPermission } = require('../services/customRoles.service');
+    const ok = await roleHasPermission(req.user.role, permissionKey);
+    if (!ok) {
+      return res.status(403).json({ error: `Permission requise : ${permissionKey}` });
+    }
+    return next();
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Erreur permissions' });
+  }
+};
+
+module.exports = {
+  auth,
+  adminAuth,
+  vetAuth,
+  livreurAuth,
+  adminOrLivreurAuth,
+  vendorAuth,
+  moderatorAuth,
+  isVetOrAdmin,
+  requirePermission,
+};
 

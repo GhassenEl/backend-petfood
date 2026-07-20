@@ -92,6 +92,16 @@ router.post('/vendor/refunds/:id/confirm-return', auth, vendorAuth, refund.vendo
 router.post('/vendor/refunds/:id/validate', auth, vendorAuth, refund.vendorValidate);
 router.post('/vendor/refunds/:id/refund', auth, vendorAuth, refund.vendorMarkRefunded);
 
+const salesChannelsCtrl = require('../controllers/vendorSalesChannels.controller');
+router.get('/vendor/sales-channels', auth, vendorAuth, salesChannelsCtrl.getConfig);
+router.put('/vendor/sales-channels', auth, vendorAuth, salesChannelsCtrl.putConfig);
+router.post('/vendor/offline-orders', auth, vendorAuth, salesChannelsCtrl.postOfflineOrder);
+router.get('/marketplace/vendors/:vendorId/channels', auth, salesChannelsCtrl.getPublicChannels);
+
+const vetHealth = require('../controllers/vetHealthProducts.controller');
+router.get('/vendor/health-proposals', auth, vendorAuth, vetHealth.listVendorProposals);
+router.patch('/vendor/health-proposals/:id', auth, vendorAuth, vetHealth.respondProposal);
+
 router.get('/moderator/refunds', auth, moderatorAuth, refund.getModeratorRefunds);
 router.post('/moderator/refunds/:id/resolve', auth, moderatorAuth, refund.moderatorResolve);
 router.post('/moderator/refunds/:id/fraud', auth, moderatorAuth, refund.moderatorFlagFraud);

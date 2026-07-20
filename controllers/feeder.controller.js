@@ -336,6 +336,13 @@ const manualDispense = async (req, res) => {
       data: { pendingCommand: command },
     });
 
+    try {
+      const { publishCommand } = require('../services/mqttFeederBridge.service');
+      publishCommand(feeder, command);
+    } catch {
+      /* MQTT optionnel */
+    }
+
     await prisma.feederLog.create({
       data: {
         feederId: feeder.id,

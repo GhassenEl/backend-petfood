@@ -126,6 +126,17 @@ const getVendorDashboard = async (user) => {
     description: vendor.description,
     commissionRate: vendor.commissionRate,
     totalSales: vendor.totalSales,
+    salesChannels: (() => {
+      try {
+        const { parseChannels } = require('../../utils/salesChannels');
+        return parseChannels(vendor.salesChannelsJson);
+      } catch {
+        return ['online'];
+      }
+    })(),
+    storeHours: vendor.storeHours || '',
+    phoneOrdersNumber: vendor.phoneOrdersNumber || '',
+    commercialAddress: vendor.commercialAddress || '',
     pendingCommissions: analytics.kpis.pendingCommissions ?? pending.reduce((s, c) => s + c.commission, 0),
     paidCommissions: analytics.kpis.paidCommissions,
     products: (vendor.products || []).map((vp) => ({

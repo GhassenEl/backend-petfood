@@ -77,16 +77,26 @@ model User {
   householdMemberships HouseholdMember[]      @relation("HouseholdMemberships")
   purchaseNeeds      PurchaseNeed[]
   purchaseNeedResponses PurchaseNeedResponse[]
+  behaviorEvents     PetBehaviorEvent[]
+  behaviorAnomalies  PetBehaviorAnomaly[]
+  vetAnimalDetections VetAnimalDetection[]
+  vetPrescriptionDrafts VetPrescriptionDraft[]
+  smartCollars         PetSmartCollar[]
 }
 
 model PetFeeder {
   id              String           @id @default(uuid())
   ownerId         String
   petId           String?
-  name            String           @default("Distributeur PetfoodTN")
+  productId       String?
+  orderItemId     String?          @unique
+  serialNumber    String?          @unique
+  firmwareVersion String?
+  name            String           @default("Gamelle intelligente PetfoodTN")
   deviceKey       String           @unique
   macAddress      String?
   status          String           @default("offline")
+  transport       String           @default("http")
   reservoirCm     Float?
   foodGrams       Float?
   temperature     Float?
@@ -98,8 +108,14 @@ model PetFeeder {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   owner           User             @relation(fields: [ownerId], references: [id])
+  pet             Pet?             @relation(fields: [petId], references: [id], onDelete: SetNull)
+  product         Product?         @relation(fields: [productId], references: [id], onDelete: SetNull)
   schedules       FeederSchedule[]
   logs            FeederLog[]
+
+  @@index([ownerId, status])
+  @@index([petId])
+  @@index([productId])
 }
 
 model FeederSchedule {
@@ -127,6 +143,101 @@ model FeederLog {
   message         String?
   createdAt       DateTime  @default(now())
   feeder          PetFeeder @relation(fields: [feederId], references: [id], onDelete: Cascade)
+
+  @@index([feederId, createdAt])
+  @@index([eventType, createdAt])
+}
+
+/// Collier intelligent connecté — température, humidité, FC par animal
+model PetSmartCollar {
+  id              String             @id @default(uuid())
+  ownerId         String
+  petId           String?            @unique
+  name            String             @default("Collier intelligent PetfoodTN")
+  deviceKey       String             @unique
+  serialNumber    String?            @unique
+  firmwareVersion String?
+  macAddress      String?
+  status          String             @default("offline")
+  transport       String             @default("mqtt")
+  batteryPercent  Float?
+  temperatureC    Float?
+  humidityPct     Float?
+  heartRateBpm    Float?
+  ambientTempC    Float?
+  lastSeenAt      DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  owner           User               @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  pet             Pet?               @relation(fields: [petId], references: [id], onDelete: SetNull)
+  readings        PetCollarReading[]
+
+  @@index([ownerId, status])
+  @@index([petId])
+}
+
+/// Historique télémétrie collier (température corporelle, humidité ambiante, FC)
+model PetCollarReading {
+  id           String         @id @default(uuid())
+  collarId     String
+  ownerId      String
+  petId        String?
+  temperatureC Float?
+  humidityPct  Float?
+  heartRateBpm Float?
+  ambientTempC Float?
+  batteryPct   Float?
+  source       String         @default("mqtt")
+  recordedAt   DateTime       @default(now())
+  collar       PetSmartCollar @relation(fields: [collarId], references: [id], onDelete: Cascade)
+
+  @@index([collarId, recordedAt])
+  @@index([ownerId, recordedAt])
+  @@index([petId, recordedAt])
+}
+
+/// Événement comportemental multi-source (gamelle, collier, eau, manuel)
+model PetBehaviorEvent {
+  id          String   @id @default(uuid())
+  ownerId     String
+  petId       String?
+  feederId    String?
+  source      String   @default("feeder")
+  eventType   String
+  value       Float?
+  unit        String?
+  payloadJson String?
+  recordedAt  DateTime @default(now())
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  pet         Pet?     @relation(fields: [petId], references: [id], onDelete: SetNull)
+
+  @@index([ownerId, recordedAt])
+  @@index([petId, recordedAt])
+  @@index([source, eventType])
+}
+
+/// Anomalie comportementale détectée (ML / baseline espèce)
+model PetBehaviorAnomaly {
+  id            String    @id @default(uuid())
+  ownerId       String
+  petId         String?
+  feederId      String?
+  score         Float
+  severity      String    @default("medium")
+  confidence    Float     @default(0.5)
+  modelVersion  String    @default("behavior_if_v1")
+  coldStart     Boolean   @default(false)
+  factorsJson   String
+  sourcesJson   String?
+  status        String    @default("open")
+  notifiedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  owner         User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  pet           Pet?      @relation(fields: [petId], references: [id], onDelete: SetNull)
+
+  @@index([ownerId, createdAt])
+  @@index([petId, status])
+  @@index([severity, createdAt])
 }
 
 model NutritionPlan {
@@ -163,6 +274,10 @@ model Pet {
   weightLogs       PetWeightLog[]
   waterMonitors    PetWaterMonitor[]
   waterReadings    PetWaterReading[]
+  feeders          PetFeeder[]
+  smartCollar      PetSmartCollar?
+  behaviorEvents   PetBehaviorEvent[]
+  behaviorAnomalies PetBehaviorAnomaly[]
 }
 
 /// Historique de poids (suivi intelligent)
@@ -238,6 +353,7 @@ model Product {
   rating_avg    Float       @default(0)
   rating_count  Int         @default(0)
   stockHistory  String?
+  productKind   String      @default("physical")
   createdAt     DateTime    @default(now())
   orderItems    OrderItem[]
   reviews       Review[]
@@ -245,6 +361,7 @@ model Product {
   vendorOffers  VendorProduct[]
   subscriptions ProductSubscription[]
   traceability  ProductTraceability?
+  petFeeders    PetFeeder[]
 }
 
 model PromoCode {
@@ -288,6 +405,8 @@ model Order {
   relayPointId     String?
   relayPointName   String?
   relayPointType   String?
+  /// Canal de vente : online | instore | phone | courier
+  salesChannel     String      @default("online")
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
   invoice          Invoice?
@@ -437,10 +556,15 @@ model ChatMessage {
   userId       String
   role         String
   content      String
+  messageType  String   @default("text")
+  nlpJson      String?
+  metadata     String?
   products     String?
   quickReplies String?
   createdAt    DateTime @default(now())
   user         User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
 }
 
 model Message {
@@ -892,6 +1016,10 @@ model Vendor {
   commercialCategory String?
   commercialVerified Boolean         @default(false)
   totalSales         Float           @default(0)
+  /// Canaux de vente JSON : ["online","instore","phone","courier"]
+  salesChannelsJson  String          @default("[\"online\"]")
+  storeHours         String?
+  phoneOrdersNumber  String?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   owner           User            @relation(fields: [ownerUserId], references: [id])
@@ -910,10 +1038,16 @@ model VendorProduct {
   imageFlag        String?
   submittedAt      DateTime @default(now())
   createdAt        DateTime @default(now())
+  /// Collaboration vétérinaire ↔ vendeur (produits de santé)
+  proposedByVetId    String?
+  healthSubtype      String?
+  collaborationNote  String?
   vendor     Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([vendorId, productId])
+  @@index([proposedByVetId])
+  @@index([healthSubtype])
 }
 
 model VendorCommission {
@@ -1423,4 +1557,94 @@ model ActivityLog {
   @@index([actorRole])
   @@index([module])
   @@index([action])
+}
+
+/// Profil espèce géré en base — référentiel ML détection animal
+model AnimalSpeciesProfile {
+  id                   String               @id @default(uuid())
+  speciesCode          String               @unique
+  labelFr              String
+  labelEn              String?
+  weightMinKg          Float?
+  weightMaxKg          Float?
+  tempMinC             Float?
+  tempMaxC             Float?
+  heartRateMin         Int?
+  heartRateMax         Int?
+  keywordsJson         String
+  featuresJson         String?
+  commonConditionsJson String?
+  medicationPriorsJson String?
+  active               Boolean              @default(true)
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  detections           VetAnimalDetection[]
+}
+
+/// Détection / identification animal (ML + correspondance base patients)
+model VetAnimalDetection {
+  id                  String                @id @default(uuid())
+  vetId               String?
+  ownerId             String?
+  petId               String?
+  speciesProfileId    String?
+  inputDescription    String
+  detectedSpeciesCode String
+  confidence          Float
+  matchedPetId        String?
+  alternativesJson    String?
+  featuresJson        String?
+  modelVersion        String                @default("animal_species_v1")
+  resultJson          String
+  createdAt           DateTime              @default(now())
+  vet                 User?                 @relation(fields: [vetId], references: [id], onDelete: SetNull)
+  speciesProfile      AnimalSpeciesProfile? @relation(fields: [speciesProfileId], references: [id], onDelete: SetNull)
+
+  @@index([vetId, createdAt])
+  @@index([ownerId])
+  @@index([detectedSpeciesCode])
+}
+
+/// Brouillon ordonnance dynamique — agent IA vétérinaire
+model VetPrescriptionDraft {
+  id                String   @id @default(uuid())
+  vetId             String
+  ownerId           String?
+  petId             String?
+  petName           String?
+  diagnosis         String
+  symptoms          String?
+  animalType        String?
+  medicationsJson   String
+  supplementsJson   String?
+  instructions      String?
+  aiSummary         String?
+  refinementLogJson String?
+  status            String   @default("draft")
+  prescriptionId    String?
+  analysisId          String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  vet               User     @relation(fields: [vetId], references: [id], onDelete: Cascade)
+
+  @@index([vetId, status])
+  @@index([ownerId, petName])
+}
+
+/// Rôles custom créés par l’admin (permissions JSON)
+model CustomRole {
+  id          String   @id @default(uuid())
+  slug        String   @unique
+  label       String
+  description String?
+  /// JSON array de clés permission (ex. ["users.read","stock.write"])
+  permissions String   @default("[]")
+  homeRoute   String   @default("/admin/dashboard")
+  basedOn     String?
+  isSystem    Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive])
 }

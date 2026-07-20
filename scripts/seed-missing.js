@@ -30,6 +30,15 @@ const DEMO_ACCOUNTS = [
   { email: 'amina@petfood.tn', password: 'Amina2024!', name: 'Amina Ben Ali', role: 'client', petType: 'dog' },
   { email: 'youssef@petfood.tn', password: 'Youssef2024!', name: 'Youssef Trabelsi', role: 'client', petType: 'cat' },
   { email: 'sami.livreur@petfood.tn', password: 'SamiLivreur2024!', name: 'Sami Livreur', role: 'livreur', region: 'Ariana', phone: '+216 50 333 444' },
+  {
+    email: 'vendor@petfood.tn',
+    password: 'Vendor2024!',
+    name: 'Boutique Animalerie Tunis',
+    role: 'vendor',
+    phone: '+216 71 000 111',
+    address: 'Avenue Habib Bourguiba, Tunis',
+    region: 'Tunis',
+  },
 ];
 
 const DEMO_PETS = [
@@ -141,14 +150,18 @@ async function ensureProducts() {
       price: Number(product.price || 0),
       discount: Number(product.discount || 0),
       imageUrl: product.imageUrl || '',
+      description: product.description || '',
       category: product.category || 'nourriture',
       animalType: product.animalType || 'other',
+      productKind: product.productKind || 'physical',
       popularity: Number(product.popularity || 0),
       rating_avg: Number(product.rating_avg || 0),
       rating_count: Number(product.rating_count || 0),
       stock: Number(product.stock || 50),
-      tags: product.tags || [],
-      stockHistory: product.stockHistory || [],
+      tags: Array.isArray(product.tags) ? JSON.stringify(product.tags) : (product.tags || '[]'),
+      stockHistory: Array.isArray(product.stockHistory)
+        ? JSON.stringify(product.stockHistory)
+        : (product.stockHistory || '[]'),
     })),
   });
   console.log(`✅ ${missing.length} product(s) added`);
@@ -1262,6 +1275,12 @@ async function seedMissing() {
     await ensureDemoNutritionPlans();
     await ensurePromoCodes();
     await ensurePlatformEnrichment();
+    try {
+      const { seedModeratorData } = require('../utils/seedModerator');
+      await seedModeratorData();
+    } catch (e) {
+      console.warn('⚠️ seedModerator:', e.message);
+    }
 
     const counts = {
       users: await prisma.user.count(),

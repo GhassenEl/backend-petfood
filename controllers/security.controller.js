@@ -9,6 +9,8 @@ const {
   listIntrusionEvents,
   getIdsStatus,
 } = require('../services/intrusionDetection.service');
+const { listSessions, revokeSession } = require('../services/sessionRegistry.service');
+const { buildPlatformSecurityPack } = require('../services/platformSecurity.service');
 
 const shouldBlock = () => process.env.BLOCK_THREATS !== 'false';
 
@@ -97,8 +99,10 @@ const scanFile = async (req, res) => {
 const getThreats = async (req, res) => {
   try {
     const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const items = threatLog.listThreats(limit);
     res.json({
-      items: threatLog.listThreats(limit),
+      items,
+      threats: items,
       status: threatLog.getStatus(signatureCount),
     });
   } catch (error) {
@@ -127,10 +131,46 @@ const getStatus = async (_req, res) => {
 const getIntrusionEvents = async (req, res) => {
   try {
     const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const items = listIntrusionEvents(limit);
     res.json({
-      items: listIntrusionEvents(limit),
+      items,
+      events: items,
       status: getIdsStatus(),
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+const getSessions = async (req, res) => {
+  try {
+    const sessions = listSessions({
+      userId: req.user.id || req.user._id,
+      adminView: true,
+      currentJti: req.user.jti || null,
+    });
+    res.json({ sessions, count: sessions.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+const revokeSessionHandler = async (req, res) => {
+  try {
+    const result = revokeSession(req.params.id, {
+      requesterId: req.user.id || req.user._id,
+      isAdmin: req.user.role === 'admin',
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message });
+  }
+};
+
+const getPlatformPack = async (req, res) => {
+  try {
+    const pack = await buildPlatformSecurityPack(req);
+    res.json(pack);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -143,4 +183,7 @@ module.exports = {
   getThreats,
   getStatus,
   getIntrusionEvents,
+  getSessions,
+  revokeSessionHandler,
+  getPlatformPack,
 };

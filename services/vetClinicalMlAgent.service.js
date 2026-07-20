@@ -5,6 +5,8 @@ const { getPetTimeline } = require('./clinicalAlerts.service');
 const { createDossierFromPet, addEntry } = require('./medicalDossier.service');
 const { completionWithSystem, VET_SYSTEM_PROMPT } = require('./groq.service');
 const { checkPythonMlHealth } = require('./mlPythonClient');
+const { listRecentDetections } = require('./vetAnimalDetection.service');
+const { listActiveSpeciesProfiles } = require('./animalSpeciesProfile.service');
 
 const demoAnalyses = [];
 
@@ -115,6 +117,8 @@ const mapAnalysisRow = (row) => {
 const getClinicalMlAgentPack = async (user) => {
   const vetId = resolveVetId(user);
   const mlHealth = await checkPythonMlHealth().catch(() => ({ ok: false }));
+  const speciesProfiles = await listActiveSpeciesProfiles().catch(() => []);
+  const recentDetections = await listRecentDetections(vetId, 5).catch(() => []);
 
   let recent = [];
   let urgentCount = 0;
@@ -165,6 +169,7 @@ const getClinicalMlAgentPack = async (user) => {
     groqPowered: Boolean(groqSummary),
     models: [
       'clinical_logistic_v1',
+      'animal_species_v1',
       'groq',
       'clinical_rules',
       'pet_history',
@@ -174,14 +179,22 @@ const getClinicalMlAgentPack = async (user) => {
     tip:
       urgentCount > 0
         ? `${urgentCount} analyse(s) urgente(s) — prioriser consultation et dossier médical`
-        : 'Détection précoce : saisissez les symptômes pour obtenir le niveau de risque IA',
+        : `${speciesProfiles.length} profil(s) espèce en base — détection ML disponible`,
     stats: {
       recentAnalyses: recent.length,
       urgentLast7Days: urgentCount,
       diseaseSuspectedLast30Days: diseaseCount,
+      speciesProfiles: speciesProfiles.length,
+      recentDetections: recentDetections.length,
     },
     recentAnalyses: recent,
+    recentAnimalDetections: recentDetections,
+    speciesProfiles: speciesProfiles.map((p) => ({
+      code: p.speciesCode,
+      label: p.labelFr,
+    })),
     actionHints: [
+      { type: 'detection', label: 'Détection espèce ML', link: '/vet/intelligence?tab=detection' },
       { type: 'diagnostics', label: 'Nouvelle analyse symptômes', link: '/vet/diagnostics' },
       { type: 'dossiers', label: 'Dossiers médicaux', link: '/vet/medical-dossiers' },
       { type: 'prescriptions', label: 'Ordonnances', link: '/vet/prescriptions' },

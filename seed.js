@@ -23,6 +23,7 @@ const { defaultBlogArticles } = require('./utils/defaultBlogArticles');
 const { seedRefunds } = require('./utils/seedRefunds');
 const { seedTeleconsultAppointments } = require('./utils/seedTeleconsult');
 const { seedModeratorData } = require('./utils/seedModerator');
+const { seedAnimalSpeciesProfiles } = require('./utils/seedAnimalSpecies');
 
 const mapProductRow = (product) => ({
   id: product._id,
@@ -176,6 +177,7 @@ const seedData = async () => {
     await seedRefunds();
     await seedTeleconsultAppointments();
     await seedModeratorData();
+    await seedAnimalSpeciesProfiles(prisma);
 
     const fmCount = await prisma.petFoundMeReport.count();
     if (fmCount === 0) {

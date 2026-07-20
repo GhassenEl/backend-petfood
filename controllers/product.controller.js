@@ -1,6 +1,7 @@
 const { isDemoMode } = require('../prismaClient');
 const demoStore = require('../utils/demoStore');
 const productService = require('../services/product.service');
+const { enrichProductsWithRatings } = require('../services/productRating.service');
 const { getPetRecommendations } = require('../services/petRecommendation.service');
 const { logFromRequest } = require('../services/activityLog.service');
 
@@ -11,13 +12,13 @@ const handleError = (res, error, defaultStatus = 500) => {
 const getProducts = async (req, res) => {
   try {
     if (isDemoMode()) {
-      const products = demoStore.getProducts();
+      const products = await enrichProductsWithRatings(demoStore.getProducts());
       const priceSvc = require('../services/adminPriceGovernance.service');
       const policy = await priceSvc.getPolicyRecord();
       return res.json(products.map((p) => priceSvc.enrichProductForClient(p, policy, null)));
     }
 
-    const products = await productService.getProducts();
+    const products = await enrichProductsWithRatings(await productService.getProducts());
     try {
       const priceSvc = require('../services/adminPriceGovernance.service');
       const policy = await priceSvc.getPolicyRecord();

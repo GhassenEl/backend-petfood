@@ -74,9 +74,39 @@ const checkPythonMlHealth = async () => {
   }
 };
 
+/**
+ * Détection espèce animal — FastAPI /ml/vet/animal-detect
+ */
+const fetchVetAnimalDetect = async (payload) => {
+  if (!isPythonMlEnabled()) return null;
+  const res = await fetchWithTimeout(`${ML_SERVICE_URL}/ml/vet/animal-detect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) return null;
+  return res.json();
+};
+
+/**
+ * Score cohérence ordonnance — FastAPI /ml/vet/prescription-score
+ */
+const fetchVetPrescriptionScore = async (payload) => {
+  if (!isPythonMlEnabled()) return null;
+  const res = await fetchWithTimeout(`${ML_SERVICE_URL}/ml/vet/prescription-score`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) return null;
+  return res.json();
+};
+
 module.exports = {
   fetchPythonSalesForecast,
   checkPythonMlHealth,
+  fetchVetAnimalDetect,
+  fetchVetPrescriptionScore,
   isPythonMlEnabled,
   ML_SERVICE_URL,
 };

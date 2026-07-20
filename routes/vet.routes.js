@@ -127,4 +127,30 @@ router.get('/clinical/patient-context', auth, vetAuth, patientContext);
 router.get('/clinical/timeline', auth, vetAuth, petTimeline);
 router.get('/clinical/alerts', auth, vetAuth, clinicalAlerts);
 
+const {
+  postAnimalDetect,
+  postAnimalDetectImage,
+  getSpeciesProfiles,
+  getRecentDetections,
+  postPrescriptionAssist,
+  postRefinePrescription,
+  postApplyPrescriptionDraft,
+  postDiagnosticAssist,
+} = require('../controllers/vetMlAssist.controller');
+
+router.get('/ml/species-profiles', auth, vetAuth, getSpeciesProfiles);
+router.get('/ml/animal-detections', auth, vetAuth, getRecentDetections);
+router.post('/ml/animal-detect', auth, vetAuth, postAnimalDetect);
+router.post('/ml/animal-detect-image', auth, vetAuth, postAnimalDetectImage);
+router.post('/ml/prescription-assist', auth, vetAuth, postPrescriptionAssist);
+router.post('/ml/prescription-assist/:id/refine', auth, vetAuth, postRefinePrescription);
+router.post('/ml/prescription-drafts/:id/apply', auth, vetAuth, postApplyPrescriptionDraft);
+router.post('/ml/diagnostic-assist', auth, vetAuth, postDiagnosticAssist);
+
+const healthProducts = require('../controllers/vetHealthProducts.controller');
+router.get('/health-products/subtypes', auth, vetAuth, healthProducts.listSubtypes);
+router.get('/health-products/vendors', auth, vetAuth, healthProducts.listVendors);
+router.get('/health-products', auth, vetAuth, healthProducts.listMine);
+router.post('/health-products', auth, vetAuth, healthProducts.publish);
+
 module.exports = router;
